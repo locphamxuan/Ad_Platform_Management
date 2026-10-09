@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { canManageRole, hasPermission, PERMISSIONS } from '../src/domain/permissions.js';
+import {
+  assertDailyBudgetAllowed,
+  assertRuleActionAllowed,
+  BUYER_DAILY_BUDGET_LIMIT,
+  canManageRole,
+  dailyBudgetLimit,
+  hasPermission,
+  PERMISSIONS,
+  ROLE_PERMISSIONS,
+} from '../src/domain/permissions.js';
 import { ROLES } from '../src/domain/types.js';
 
 describe('hasPermission', () => {
@@ -7,30 +16,50 @@ describe('hasPermission', () => {
     for (const permission of PERMISSIONS) expect(hasPermission('owner', permission)).toBe(true);
   });
 
+  it('nests every level inside the one above it', () => {
+    for (let i = 1; i < ROLES.length; i++) {
+      const higher = ROLE_PERMISSIONS[ROLES[i - 1]];
+      const lower = ROLE_PERMISSIONS[ROLES[i]];
+      expect(lower.every((p) => higher.includes(p))).toBe(true);
+      expect(higher.length).toBeGreaterThan(lower.length);
+    }
+  });
+
   it('separates admin from owner: operations yes, workspace governance no', () => {
     expect(PERMISSIONS.filter((p) => !hasPermission('admin', p))).toEqual(['workspace:manage']);
   });
 
-  it('gives every role a distinct permission set', () => {
-    const sets = ROLES.map((role) => PERMISSIONS.filter((p) => hasPermission(role, p)).join(','));
-    expect(new Set(sets).size).toBe(ROLES.length);
-  });
-
-  it('lets media buyers operate campaigns and rules but not integrations or users', () => {
+  it('lets media buyers operate campaigns and rules but not integrations, users or large budgets', () => {
     expect(hasPermission('media_buyer', 'campaign:manage')).toBe(true);
     expect(hasPermission('media_buyer', 'rule:manage')).toBe(true);
+    expect(hasPermission('media_buyer', 'integration:view')).toBe(true);
     expect(hasPermission('media_buyer', 'integration:manage')).toBe(false);
     expect(hasPermission('media_buyer', 'user:manage')).toBe(false);
-  });
-
-  it('keeps viewers read-only', () => {
-    const writes = PERMISSIONS.filter((p) => p.endsWith(':manage'));
-    for (const permission of writes) expect(hasPermission('viewer', permission)).toBe(false);
-    expect(hasPermission('viewer', 'campaign:view')).toBe(true);
+    expect(hasPermission('media_buyer', 'budget:approve')).toBe(false);
   });
 
   it('limits clients to reports only', () => {
-    expect(PERMISSIONS.filter((p) => hasPermission('client', p))).toEqual(['report:view']);
+    expect(ROLE_PERMISSIONS.client).toEqual(['report:view']);
+  });
+});
+
+describe('budget limits', () => {
+  it('caps only roles without budget approval', () => {
+    expect(dailyBudgetLimit('media_buyer')).toBe(BUYER_DAILY_BUDGET_LIMIT);
+    expect(dailyBudgetLimit('admin')).toBeNull();
+    expect(dailyBudgetLimit('owner')).toBeNull();
+  });
+
+  it('allows budgets up to the limit and rejects anything above it', () => {
+    expect(() => assertDailyBudgetAllowed('media_buyer', BUYER_DAILY_BUDGET_LIMIT)).not.toThrow();
+    expect(() => assertDailyBudgetAllowed('media_buyer', BUYER_DAILY_BUDGET_LIMIT + 1)).toThrow(/tối đa/);
+    expect(() => assertDailyBudgetAllowed('admin', BUYER_DAILY_BUDGET_LIMIT * 5)).not.toThrow();
+  });
+
+  it('reserves automated budget increases for budget approvers', () => {
+    expect(() => assertRuleActionAllowed('media_buyer', { type: 'increase_budget' })).toThrow();
+    expect(() => assertRuleActionAllowed('media_buyer', { type: 'decrease_budget' })).not.toThrow();
+    expect(() => assertRuleActionAllowed('admin', { type: 'increase_budget' })).not.toThrow();
   });
 });
 
@@ -48,6 +77,6 @@ describe('canManageRole', () => {
 
   it('denies roles without user management', () => {
     expect(canManageRole('media_buyer', 'client')).toBe(false);
-    expect(canManageRole('viewer', 'client')).toBe(false);
+    expect(canManageRole('client', 'client')).toBe(false);
   });
 });

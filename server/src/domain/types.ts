@@ -76,7 +76,7 @@ export interface Rule {
 }
 
 /** Workspace roles, from most to least privileged. */
-export const ROLES = ['owner', 'admin', 'media_buyer', 'viewer', 'client'] as const;
+export const ROLES = ['owner', 'admin', 'media_buyer', 'client'] as const;
 export type Role = (typeof ROLES)[number];
 
 export interface User {

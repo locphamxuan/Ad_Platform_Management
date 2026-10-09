@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Container } from '../container.js';
+import { allocateBudget } from '../domain/budget.js';
+import { assertDailyBudgetAllowed, assertRuleActionAllowed } from '../domain/permissions.js';
 import { authenticate, bearerToken, currentUser, requirePermission } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/error-handler.js';
 import { userActor } from '../services/activity.service.js';
@@ -75,32 +77,47 @@ export function createApiRouter(c: Container): Router {
   router.patch('/campaigns/:id', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
     const { status, dailyBudget } = campaignPatchSchema.parse(req.body);
-    const actor = userActor(currentUser(res));
+    const user = currentUser(res);
+    if (dailyBudget) assertDailyBudgetAllowed(user.role, dailyBudget);
+    const actor = userActor(user);
     if (status) await c.campaigns.setStatus(id, status, actor);
     if (dailyBudget) await c.campaigns.setBudget(id, dailyBudget, actor);
     res.json(await c.repositories.campaigns.getById(id));
   }));
   router.post('/campaigns/unified', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const input = unifiedCampaignSchema.parse(req.body);
-    res.status(201).json(await c.unifiedCampaigns.create(input, userActor(currentUser(res))));
+    const user = currentUser(res);
+    // The cap is per campaign, so check what each channel would actually receive.
+    for (const { dailyBudget } of allocateBudget(input.totalDailyBudget, input.allocations)) {
+      assertDailyBudgetAllowed(user.role, dailyBudget);
+    }
+    res.status(201).json(await c.unifiedCampaigns.create(input, userActor(user)));
   }));
 
   router.get('/rules', requirePermission('rule:view'), asyncHandler(async (_req, res) => {
     res.json(await c.rules.list());
   }));
   router.post('/rules', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
-    res.status(201).json(await c.rules.create(ruleSchema.parse(req.body), userActor(currentUser(res))));
+    const input = ruleSchema.parse(req.body);
+    const user = currentUser(res);
+    if (input.enabled) assertRuleActionAllowed(user.role, input.action);
+    res.status(201).json(await c.rules.create(input, userActor(user)));
   }));
   router.patch('/rules/:id', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
-    res.json(await c.rules.setEnabled(idParam.parse(req.params).id, enabled, userActor(currentUser(res))));
+    const user = currentUser(res);
+    if (enabled) assertRuleActionAllowed(user.role, (await c.repositories.rules.getById(id)).action);
+    res.json(await c.rules.setEnabled(id, enabled, userActor(user)));
   }));
   router.delete('/rules/:id', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
     await c.rules.delete(idParam.parse(req.params).id, userActor(currentUser(res)));
     res.status(204).end();
   }));
   router.post('/rules/:id/run', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
-    res.json(await c.rules.run(idParam.parse(req.params).id));
+    const { id } = idParam.parse(req.params);
+    assertRuleActionAllowed(currentUser(res).role, (await c.repositories.rules.getById(id)).action);
+    res.json(await c.rules.run(id));
   }));
 
   router.get('/activity', requirePermission('activity:view'), asyncHandler(async (req, res) => {

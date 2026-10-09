@@ -30,7 +30,16 @@ export async function connectMongo(uri: string, dbName: string) {
   await client.connect();
   const db = client.db(dbName);
   await ensureIndexes(db);
+  await migrateRetiredRoles(db);
   return { client, db };
+}
+
+/**
+ * The read-only "viewer" role was retired; its users fall back to the least-privileged
+ * role (client) so an existing database never holds a role the server cannot resolve.
+ */
+async function migrateRetiredRoles(db: Db): Promise<void> {
+  await db.collection(COLLECTIONS.users).updateMany({ role: 'viewer' }, { $set: { role: 'client' } });
 }
 
 async function ensureIndexes(db: Db): Promise<void> {
