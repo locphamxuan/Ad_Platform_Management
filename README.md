@@ -20,13 +20,15 @@ Bốn cấp, xếp từ cao xuống thấp. Mỗi cấp có **toàn bộ quyền
 
 | Cấp | Vai trò | Thêm quyền so với cấp dưới | Trọng tâm trên Dashboard |
 |---|---|---|---|
-| 4 | Chủ sở hữu (Owner) | Bổ nhiệm/gỡ Owner và Admin (`workspace:manage`) | Toàn cảnh workspace: ngân sách đang chạy, dự kiến 30 ngày, cơ cấu đội |
+| 4 | Chủ sở hữu (Owner) | Bổ nhiệm/gỡ Owner và Admin, đặt hạn mức ngân sách Media Buyer (`workspace:manage`) | Toàn cảnh workspace: ngân sách đang chạy, dự kiến 30 ngày, cơ cấu đội |
 | 3 | Quản trị viên (Admin) | Kết nối/ngắt nền tảng; quản lý Media Buyer và Khách hàng; duyệt ngân sách vượt hạn mức và rule tăng ngân sách (`budget:approve`) | Vận hành hệ thống: trạng thái kết nối, rule, tài khoản bị khoá, hoạt động gần nhất |
 | 2 | Media Buyer | Xem chiến dịch, rule, kết nối, nhật ký; bật/tắt/sửa ngân sách, tạo chiến dịch đa kênh; tạo và chạy rule | Việc cần xử lý: chiến dịch ROAS thấp, số đang chạy/tạm dừng |
 | 1 | Khách hàng (Client) | Xem báo cáo hiệu quả (dashboard) | Báo cáo chung |
 | — | Rule / Hệ thống | Tác nhân tự động, được ghi riêng trong nhật ký | — |
 
-**Hạn mức ngân sách của Media Buyer:** mỗi chiến dịch tối đa **10 triệu đ/ngày** (khi tạo đa kênh thì tính trên ngân sách của từng kênh). Mức cao hơn phải do Admin/Owner đặt. Media Buyer cũng không được bật hoặc chạy rule *tăng ngân sách*, vì automation có thể đẩy ngân sách vượt hạn mức. Họ vẫn tạo được rule này ở trạng thái tắt để Admin duyệt.
+**Hạn mức ngân sách của Media Buyer:** mặc định **không giới hạn**. Owner có thể đặt mức tối đa (VND/ngày cho một chiến dịch) hoặc tắt lại tại trang *Người dùng và phân quyền*; mỗi lần đổi đều được ghi nhật ký. Khi đang có hạn mức:
+- Ngân sách vượt mức phải do Admin/Owner đặt; khi tạo đa kênh, hạn mức tính trên ngân sách của từng kênh.
+- Media Buyer không được bật hoặc chạy rule *tăng ngân sách* (automation có thể đẩy ngân sách vượt hạn mức), nhưng vẫn tạo được rule ở trạng thái tắt để Admin duyệt.
 
 Quyền được kiểm tra ở server (`server/src/domain/permissions.ts`); client chỉ ẩn/hiện giao diện theo danh sách quyền và hạn mức server trả về trong `/api/auth/me`. Vai trò "Người xem" (Viewer) cũ đã bị bỏ: tài khoản viewer có sẵn trong database được tự động chuyển thành Khách hàng khi server khởi động.
 
