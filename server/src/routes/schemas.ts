@@ -64,6 +64,11 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const settingsSchema = z.object({
+  /** null switches the cap off */
+  buyerDailyBudgetLimit: z.number().int().positive().nullable(),
+});
+
 const roleSchema = z.enum(ROLES);
 const userNameSchema = z.string().trim().min(2).max(80);
 

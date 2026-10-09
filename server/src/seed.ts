@@ -141,6 +141,7 @@ export async function seedDatabase(db: Db): Promise<void> {
     activities,
     users: await buildDemoUsers(now),
     sessions: [],
+    settings: [],
   };
   for (const [name, docs] of Object.entries(data)) {
     const collection = db.collection(name);

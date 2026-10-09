@@ -1,5 +1,14 @@
 import { MongoClient, type Db } from 'mongodb';
-import type { ActivityLog, Campaign, Integration, MetricDaily, Rule, Session, User } from '../domain/types.js';
+import type {
+  ActivityLog,
+  Campaign,
+  Integration,
+  MetricDaily,
+  Rule,
+  Session,
+  User,
+  WorkspaceSettings,
+} from '../domain/types.js';
 
 export const COLLECTIONS = {
   integrations: 'integrations',
@@ -9,6 +18,7 @@ export const COLLECTIONS = {
   activities: 'activities',
   users: 'users',
   sessions: 'sessions',
+  settings: 'settings',
 } as const;
 
 export interface CollectionTypes {
@@ -19,6 +29,7 @@ export interface CollectionTypes {
   activities: ActivityLog;
   users: User;
   sessions: Session;
+  settings: WorkspaceSettings;
 }
 
 /** Excludes Mongo's internal _id so domain objects stay storage-agnostic. */

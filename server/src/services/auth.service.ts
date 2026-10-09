@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { PublicUser, User } from '../domain/types.js';
 import { UnauthorizedError } from '../domain/errors.js';
 import { verifyPassword } from '../domain/password.js';
-import { dailyBudgetLimit, ROLE_PERMISSIONS } from '../domain/permissions.js';
+import { ROLE_PERMISSIONS } from '../domain/permissions.js';
 import type { SessionRepository } from '../repositories/session.repository.js';
 import type { UserRepository } from '../repositories/user.repository.js';
 
@@ -12,11 +12,11 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 
 export const toPublicUser = ({ passwordHash: _passwordHash, ...user }: User): PublicUser => user;
 
-/** What the client needs to render: the user plus what their role allows. */
-export const toAuthProfile = (user: PublicUser) => ({
+/** What the client needs to render: the user, what their role allows and their current budget cap. */
+export const toAuthProfile = (user: PublicUser, dailyBudgetLimit: number | null) => ({
   ...user,
   permissions: ROLE_PERMISSIONS[user.role],
-  dailyBudgetLimit: dailyBudgetLimit(user.role),
+  dailyBudgetLimit,
 });
 
 export class AuthService {

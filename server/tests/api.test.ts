@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { createContainer } from '../src/container.js';
 import { connectMongo } from '../src/db/mongo.js';
-import { BUYER_DAILY_BUDGET_LIMIT } from '../src/domain/permissions.js';
 import { DEMO_PASSWORD, seedDatabase } from '../src/seed.js';
 
 /**
@@ -87,7 +86,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
 
     it('returns the profile with role permissions', async () => {
       const me = await call('/auth/me', { token: tokens.client });
-      expect(me.body).toMatchObject({ role: 'client', permissions: ['report:view'], dailyBudgetLimit: BUYER_DAILY_BUDGET_LIMIT });
+      expect(me.body).toMatchObject({ role: 'client', permissions: ['report:view'], dailyBudgetLimit: null });
       expect(me.body).not.toHaveProperty('passwordHash');
     });
 
@@ -118,50 +117,79 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect(latest).toMatchObject({ actor: 'user', actorName: 'Lê Media Buyer' });
     });
 
-    it('requires budget approval above the media buyer limit', async () => {
-      const [campaign] = (await call('/campaigns?platform=facebook', { token: tokens.buyer })).body;
-      const overLimit = { dailyBudget: BUYER_DAILY_BUDGET_LIMIT + 1_000_000 };
-      const byBuyer = await call(`/campaigns/${campaign.id}`, { method: 'PATCH', token: tokens.buyer, body: overLimit });
-      expect(byBuyer.status).toBe(403);
-      const byAdmin = await call(`/campaigns/${campaign.id}`, { method: 'PATCH', token: tokens.admin, body: overLimit });
-      expect(byAdmin.status).toBe(200);
+    it('stops media buyers from managing integrations and users', async () => {
+      expect((await call('/integrations/google/disconnect', { method: 'POST', token: tokens.buyer })).status).toBe(403);
+      expect((await call('/users', { token: tokens.buyer })).status).toBe(403);
+    });
+  });
+
+  describe('workspace budget limit', () => {
+    const LIMIT = 10_000_000;
+    const setLimit = (buyerDailyBudgetLimit: number | null, token = tokens.owner) =>
+      call('/settings', { method: 'PUT', token, body: { buyerDailyBudgetLimit } });
+    const facebookCampaign = async () => (await call('/campaigns?platform=facebook', { token: tokens.buyer })).body[0];
+    const setBudget = async (dailyBudget: number, token: string) =>
+      call(`/campaigns/${(await facebookCampaign()).id}`, { method: 'PATCH', token, body: { dailyBudget } });
+    const unified = (totalDailyBudget: number) => ({
+      name: 'Kiểm tra hạn mức',
+      objective: 'sales',
+      totalDailyBudget,
+      allocations: [
+        { platform: 'facebook', percent: 50 },
+        { platform: 'tiktok', percent: 50 },
+      ],
+      creative: { headline: 'Sale', primaryText: 'Giảm giá', landingUrl: 'https://example.com' },
+    });
+    const scaleRule = {
+      name: 'Scale nhanh',
+      condition: { metric: 'roas', operator: 'gt', threshold: 3 },
+      action: { type: 'increase_budget', value: 20 },
+    };
+
+    it('leaves media buyers uncapped by default', async () => {
+      expect((await call('/settings', { token: tokens.owner })).body).toEqual({ buyerDailyBudgetLimit: null });
+      expect((await setBudget(LIMIT * 5, tokens.buyer)).status).toBe(200);
+      expect((await call('/rules', { method: 'POST', token: tokens.buyer, body: scaleRule })).status).toBe(201);
+    });
+
+    it('lets only the owner change the limit, and logs it', async () => {
+      expect((await setLimit(LIMIT, tokens.admin)).status).toBe(403);
+      expect((await setLimit(LIMIT)).body).toMatchObject({ buyerDailyBudgetLimit: LIMIT });
+      const [latest] = (await call('/activity?limit=1', { token: tokens.admin })).body;
+      expect(latest.message).toContain('không giới hạn');
+      expect((await call('/auth/me', { token: tokens.buyer })).body.dailyBudgetLimit).toBe(LIMIT);
+      expect((await call('/auth/me', { token: tokens.admin })).body.dailyBudgetLimit).toBeNull();
+    });
+
+    it('requires budget approval above the limit once it is set', async () => {
+      expect((await setBudget(LIMIT + 1_000_000, tokens.buyer)).status).toBe(403);
+      expect((await setBudget(LIMIT + 1_000_000, tokens.admin)).status).toBe(200);
     });
 
     it('checks the limit per channel when creating a multi-channel campaign', async () => {
-      const body = (totalDailyBudget: number) => ({
-        name: 'Kiểm tra hạn mức',
-        objective: 'sales',
-        totalDailyBudget,
-        allocations: [
-          { platform: 'facebook', percent: 50 },
-          { platform: 'tiktok', percent: 50 },
-        ],
-        creative: { headline: 'Sale', primaryText: 'Giảm giá', landingUrl: 'https://example.com' },
-      });
-      // 2 × 10M: each channel sits exactly at the limit.
-      const atLimit = await call('/campaigns/unified', { method: 'POST', token: tokens.buyer, body: body(BUYER_DAILY_BUDGET_LIMIT * 2) });
-      expect(atLimit.status).toBe(201);
-      const overLimit = await call('/campaigns/unified', { method: 'POST', token: tokens.buyer, body: body(BUYER_DAILY_BUDGET_LIMIT * 3) });
-      expect(overLimit.status).toBe(403);
+      // Split 50/50: 2 × limit puts each channel exactly at the limit.
+      const create = (total: number) => call('/campaigns/unified', { method: 'POST', token: tokens.buyer, body: unified(total) });
+      expect((await create(LIMIT * 2)).status).toBe(201);
+      expect((await create(LIMIT * 3)).status).toBe(403);
     });
 
-    it('reserves automated budget increases for admins', async () => {
-      const rule = {
-        name: 'Scale nhanh',
-        condition: { metric: 'roas', operator: 'gt', threshold: 3 },
-        action: { type: 'increase_budget', value: 20 },
-      };
-      expect((await call('/rules', { method: 'POST', token: tokens.buyer, body: rule })).status).toBe(403);
-      const draft = await call('/rules', { method: 'POST', token: tokens.buyer, body: { ...rule, enabled: false } });
+    it('reserves automated budget increases for admins while capped', async () => {
+      expect((await call('/rules', { method: 'POST', token: tokens.buyer, body: scaleRule })).status).toBe(403);
+      const draft = await call('/rules', { method: 'POST', token: tokens.buyer, body: { ...scaleRule, enabled: false } });
       expect(draft.status).toBe(201);
       const enable = { method: 'PATCH', body: { enabled: true } };
       expect((await call(`/rules/${draft.body.id}`, { ...enable, token: tokens.buyer })).status).toBe(403);
       expect((await call(`/rules/${draft.body.id}`, { ...enable, token: tokens.admin })).status).toBe(200);
     });
 
-    it('stops media buyers from managing integrations and users', async () => {
-      expect((await call('/integrations/google/disconnect', { method: 'POST', token: tokens.buyer })).status).toBe(403);
-      expect((await call('/users', { token: tokens.buyer })).status).toBe(403);
+    it('lifts the cap again when the owner switches it off', async () => {
+      expect((await setLimit(null)).body).toMatchObject({ buyerDailyBudgetLimit: null });
+      expect((await setBudget(LIMIT * 3, tokens.buyer)).status).toBe(200);
+    });
+
+    it('rejects invalid limits', async () => {
+      expect((await setLimit(0)).status).toBe(400);
+      expect((await setLimit(-5)).status).toBe(400);
     });
   });
 

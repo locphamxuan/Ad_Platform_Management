@@ -15,6 +15,7 @@ import {
   loginSchema,
   platformSchema,
   ruleSchema,
+  settingsSchema,
   unifiedCampaignSchema,
   updateUserSchema,
 } from './schemas.js';
@@ -29,15 +30,16 @@ export function createApiRouter(c: Container): Router {
   router.post('/auth/login', asyncHandler(async (req, res) => {
     const { email, password } = loginSchema.parse(req.body);
     const { token, user } = await c.auth.login(email, password);
-    res.json({ token, user: toAuthProfile(user) });
+    res.json({ token, user: toAuthProfile(user, await c.settings.budgetLimitFor(user.role)) });
   }));
 
   // Every route below requires a valid session.
   router.use(authenticate(c.auth));
 
-  router.get('/auth/me', (_req, res) => {
-    res.json(toAuthProfile(currentUser(res)));
-  });
+  router.get('/auth/me', asyncHandler(async (_req, res) => {
+    const user = currentUser(res);
+    res.json(toAuthProfile(user, await c.settings.budgetLimitFor(user.role)));
+  }));
   router.post('/auth/logout', asyncHandler(async (req, res) => {
     await c.auth.logout(bearerToken(req) ?? '');
     res.status(204).end();
@@ -52,6 +54,14 @@ export function createApiRouter(c: Container): Router {
   router.patch('/users/:id', requirePermission('user:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
     res.json(await c.users.update(id, updateUserSchema.parse(req.body), currentUser(res)));
+  }));
+
+  router.get('/settings', requirePermission('workspace:manage'), asyncHandler(async (_req, res) => {
+    res.json(await c.settings.get());
+  }));
+  router.put('/settings', requirePermission('workspace:manage'), asyncHandler(async (req, res) => {
+    const { buyerDailyBudgetLimit } = settingsSchema.parse(req.body);
+    res.json(await c.settings.setBuyerDailyBudgetLimit(buyerDailyBudgetLimit, userActor(currentUser(res))));
   }));
 
   router.get('/integrations', requirePermission('integration:view'), asyncHandler(async (_req, res) => {
@@ -78,7 +88,7 @@ export function createApiRouter(c: Container): Router {
     const { id } = idParam.parse(req.params);
     const { status, dailyBudget } = campaignPatchSchema.parse(req.body);
     const user = currentUser(res);
-    if (dailyBudget) assertDailyBudgetAllowed(user.role, dailyBudget);
+    if (dailyBudget) assertDailyBudgetAllowed(user.role, await c.settings.budgetLimitFor(user.role), dailyBudget);
     const actor = userActor(user);
     if (status) await c.campaigns.setStatus(id, status, actor);
     if (dailyBudget) await c.campaigns.setBudget(id, dailyBudget, actor);
@@ -88,8 +98,9 @@ export function createApiRouter(c: Container): Router {
     const input = unifiedCampaignSchema.parse(req.body);
     const user = currentUser(res);
     // The cap is per campaign, so check what each channel would actually receive.
+    const limit = await c.settings.budgetLimitFor(user.role);
     for (const { dailyBudget } of allocateBudget(input.totalDailyBudget, input.allocations)) {
-      assertDailyBudgetAllowed(user.role, dailyBudget);
+      assertDailyBudgetAllowed(user.role, limit, dailyBudget);
     }
     res.status(201).json(await c.unifiedCampaigns.create(input, userActor(user)));
   }));
@@ -100,14 +111,17 @@ export function createApiRouter(c: Container): Router {
   router.post('/rules', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
     const input = ruleSchema.parse(req.body);
     const user = currentUser(res);
-    if (input.enabled) assertRuleActionAllowed(user.role, input.action);
+    if (input.enabled) assertRuleActionAllowed(user.role, await c.settings.budgetLimitFor(user.role), input.action);
     res.status(201).json(await c.rules.create(input, userActor(user)));
   }));
   router.patch('/rules/:id', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
     const user = currentUser(res);
-    if (enabled) assertRuleActionAllowed(user.role, (await c.repositories.rules.getById(id)).action);
+    if (enabled) {
+      const { action } = await c.repositories.rules.getById(id);
+      assertRuleActionAllowed(user.role, await c.settings.budgetLimitFor(user.role), action);
+    }
     res.json(await c.rules.setEnabled(id, enabled, userActor(user)));
   }));
   router.delete('/rules/:id', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
@@ -116,7 +130,9 @@ export function createApiRouter(c: Container): Router {
   }));
   router.post('/rules/:id/run', requirePermission('rule:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
-    assertRuleActionAllowed(currentUser(res).role, (await c.repositories.rules.getById(id)).action);
+    const { role } = currentUser(res);
+    const { action } = await c.repositories.rules.getById(id);
+    assertRuleActionAllowed(role, await c.settings.budgetLimitFor(role), action);
     res.json(await c.rules.run(id));
   }));
 

@@ -92,6 +92,13 @@ export interface User {
 
 export type PublicUser = Omit<User, 'passwordHash'>;
 
+/** Workspace-wide settings, editable by the owner. */
+export interface WorkspaceSettings {
+  /** Largest daily budget (VND) per campaign for roles without budget:approve; null = unlimited */
+  buyerDailyBudgetLimit: number | null;
+  updatedAt?: string;
+}
+
 export interface Session {
   /** SHA-256 of the bearer token: a leaked database never reveals usable tokens */
   tokenHash: string;

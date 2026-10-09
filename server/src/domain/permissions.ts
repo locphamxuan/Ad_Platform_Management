@@ -11,7 +11,7 @@ export const PERMISSIONS = [
   'integration:view',
   'integration:manage',
   'activity:view',
-  /** Set a campaign daily budget above BUYER_DAILY_BUDGET_LIMIT */
+  /** Set a campaign daily budget above the workspace's buyer limit */
   'budget:approve',
   'user:manage',
   /** Workspace governance: appoint or remove owners and admins */
@@ -49,18 +49,18 @@ export const ROLE_LABELS: Record<Role, string> = {
   client: 'Khách hàng',
 };
 
-/** Largest daily budget (VND) a role without budget:approve may set on one campaign. */
-export const BUYER_DAILY_BUDGET_LIMIT = 10_000_000;
-
 export const hasPermission = (role: Role, permission: Permission) =>
   ROLE_PERMISSIONS[role].includes(permission);
 
-/** The per-campaign daily budget cap for a role, or null when it may approve any budget. */
-export const dailyBudgetLimit = (role: Role): number | null =>
-  hasPermission(role, 'budget:approve') ? null : BUYER_DAILY_BUDGET_LIMIT;
+/**
+ * The per-campaign daily budget cap that applies to a role, or null when it has none:
+ * budget approvers are never capped, and the workspace may leave buyers uncapped too.
+ */
+export const dailyBudgetLimit = (role: Role, buyerLimit: number | null): number | null =>
+  hasPermission(role, 'budget:approve') ? null : buyerLimit;
 
-export function assertDailyBudgetAllowed(role: Role, dailyBudget: number): void {
-  const limit = dailyBudgetLimit(role);
+/** `limit` is the role's effective cap from dailyBudgetLimit. */
+export function assertDailyBudgetAllowed(role: Role, limit: number | null, dailyBudget: number): void {
   if (limit !== null && dailyBudget > limit) {
     throw new ForbiddenError(
       `${ROLE_LABELS[role]} chỉ được đặt tối đa ${formatVnd(limit)}/ngày cho một chiến dịch; mức cao hơn cần Quản trị viên duyệt`,
@@ -68,9 +68,9 @@ export function assertDailyBudgetAllowed(role: Role, dailyBudget: number): void 
   }
 }
 
-/** Automated budget increases bypass the per-campaign cap, so they need the same approval right. */
-export function assertRuleActionAllowed(role: Role, action: Pick<Rule['action'], 'type'>): void {
-  if (action.type === 'increase_budget' && !hasPermission(role, 'budget:approve')) {
+/** Automated budget increases would bypass a per-campaign cap, so capped roles cannot enable or run them. */
+export function assertRuleActionAllowed(role: Role, limit: number | null, action: Pick<Rule['action'], 'type'>): void {
+  if (action.type === 'increase_budget' && limit !== null) {
     throw new ForbiddenError(`${ROLE_LABELS[role]} không thể bật hoặc chạy rule tự động tăng ngân sách`);
   }
 }

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   assertDailyBudgetAllowed,
   assertRuleActionAllowed,
-  BUYER_DAILY_BUDGET_LIMIT,
   canManageRole,
   dailyBudgetLimit,
   hasPermission,
@@ -44,22 +43,25 @@ describe('hasPermission', () => {
 });
 
 describe('budget limits', () => {
-  it('caps only roles without budget approval', () => {
-    expect(dailyBudgetLimit('media_buyer')).toBe(BUYER_DAILY_BUDGET_LIMIT);
-    expect(dailyBudgetLimit('admin')).toBeNull();
-    expect(dailyBudgetLimit('owner')).toBeNull();
+  const LIMIT = 10_000_000;
+
+  it('caps only roles without budget approval, and only when the workspace sets a limit', () => {
+    expect(dailyBudgetLimit('media_buyer', LIMIT)).toBe(LIMIT);
+    expect(dailyBudgetLimit('media_buyer', null)).toBeNull();
+    expect(dailyBudgetLimit('admin', LIMIT)).toBeNull();
+    expect(dailyBudgetLimit('owner', LIMIT)).toBeNull();
   });
 
   it('allows budgets up to the limit and rejects anything above it', () => {
-    expect(() => assertDailyBudgetAllowed('media_buyer', BUYER_DAILY_BUDGET_LIMIT)).not.toThrow();
-    expect(() => assertDailyBudgetAllowed('media_buyer', BUYER_DAILY_BUDGET_LIMIT + 1)).toThrow(/tối đa/);
-    expect(() => assertDailyBudgetAllowed('admin', BUYER_DAILY_BUDGET_LIMIT * 5)).not.toThrow();
+    expect(() => assertDailyBudgetAllowed('media_buyer', LIMIT, LIMIT)).not.toThrow();
+    expect(() => assertDailyBudgetAllowed('media_buyer', LIMIT, LIMIT + 1)).toThrow(/tối đa/);
+    expect(() => assertDailyBudgetAllowed('media_buyer', null, LIMIT * 100)).not.toThrow();
   });
 
-  it('reserves automated budget increases for budget approvers', () => {
-    expect(() => assertRuleActionAllowed('media_buyer', { type: 'increase_budget' })).toThrow();
-    expect(() => assertRuleActionAllowed('media_buyer', { type: 'decrease_budget' })).not.toThrow();
-    expect(() => assertRuleActionAllowed('admin', { type: 'increase_budget' })).not.toThrow();
+  it('blocks automated budget increases only for capped roles', () => {
+    expect(() => assertRuleActionAllowed('media_buyer', LIMIT, { type: 'increase_budget' })).toThrow();
+    expect(() => assertRuleActionAllowed('media_buyer', LIMIT, { type: 'decrease_budget' })).not.toThrow();
+    expect(() => assertRuleActionAllowed('media_buyer', null, { type: 'increase_budget' })).not.toThrow();
   });
 });
 
