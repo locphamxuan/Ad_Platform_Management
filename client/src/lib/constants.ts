@@ -33,14 +33,17 @@ export const RULE_ACTION_LABELS: Record<RuleActionType, string> = {
 export const ROLES: Role[] = ['owner', 'admin', 'media_buyer', 'client'];
 
 export const ROLE_META: Record<Role, { label: string; description: string }> = {
-  owner: { label: 'Chủ sở hữu', description: 'Toàn quyền như Quản trị viên, thêm quyền bổ nhiệm hoặc gỡ Chủ sở hữu và Quản trị viên' },
+  owner: {
+    label: 'Chủ sở hữu',
+    description: 'Toàn quyền như Quản trị viên, thêm quyền bổ nhiệm Chủ sở hữu/Quản trị viên và đặt hạn mức ngân sách',
+  },
   admin: {
     label: 'Quản trị viên',
     description: 'Kết nối nền tảng, quản lý Media Buyer và Khách hàng, duyệt ngân sách vượt hạn mức và rule tăng ngân sách',
   },
   media_buyer: {
     label: 'Media Buyer',
-    description: 'Vận hành chiến dịch và rule; ngân sách mỗi chiến dịch tối đa 10 triệu/ngày',
+    description: 'Vận hành chiến dịch và rule, trong hạn mức ngân sách do Chủ sở hữu đặt (mặc định không giới hạn)',
   },
   client: { label: 'Khách hàng', description: 'Chỉ xem báo cáo hiệu quả quảng cáo' },
 };

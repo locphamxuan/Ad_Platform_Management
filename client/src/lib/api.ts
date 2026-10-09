@@ -14,6 +14,7 @@ import type {
   Rule,
   RuleRunResult,
   User,
+  WorkspaceSettings,
 } from './types';
 
 export class ApiError extends Error {
@@ -75,6 +76,7 @@ const post = <T>(path: string, data?: unknown) =>
   request<T>(path, { method: 'POST', body: data === undefined ? undefined : JSON.stringify(data) });
 const patch = <T>(path: string, data: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(data) });
+const put = <T>(path: string, data: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(data) });
 
 const toQuery = (params: Record<string, string | undefined>) => {
   const entries = Object.entries(params).filter((e): e is [string, string] => Boolean(e[1]));
@@ -98,6 +100,10 @@ export const api = {
     create: (user: NewUser) => post<User>('/users', user),
     update: (id: string, changes: { name?: string; role?: Role; active?: boolean }) =>
       patch<User>(`/users/${id}`, changes),
+  },
+  settings: {
+    get: () => request<WorkspaceSettings>('/settings'),
+    update: (changes: Pick<WorkspaceSettings, 'buyerDailyBudgetLimit'>) => put<WorkspaceSettings>('/settings', changes),
   },
   integrations: {
     list: () => request<Integration[]>('/integrations'),

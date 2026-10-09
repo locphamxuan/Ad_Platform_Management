@@ -35,6 +35,12 @@ export interface AuthUser extends User {
   dailyBudgetLimit: number | null;
 }
 
+export interface WorkspaceSettings {
+  /** Max daily budget (VND) per campaign for Media Buyers; null = unlimited */
+  buyerDailyBudgetLimit: number | null;
+  updatedAt?: string;
+}
+
 export interface NewUser {
   email: string;
   name: string;

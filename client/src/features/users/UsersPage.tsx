@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { ROLE_META, ROLES } from '../../lib/constants';
 import { formatDateTime } from '../../lib/format';
+import { BudgetLimitCard } from './BudgetLimitCard';
 import { queryKeys } from '../../lib/query-keys';
 import type { NewUser, Role, User } from '../../lib/types';
 
@@ -115,6 +116,7 @@ export function UsersPage() {
               </table>
             </div>
           )}
+          {can('workspace:manage') && <BudgetLimitCard />}
           <RoleGuide />
         </div>
         <CreateUserForm roles={assignable} onCreated={refresh} />

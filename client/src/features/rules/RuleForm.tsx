@@ -17,10 +17,11 @@ const INITIAL_RULE: NewRule = {
 const isBudgetAction = (type: RuleActionType) => type === 'increase_budget' || type === 'decrease_budget';
 
 export function RuleForm({ onCreated }: { onCreated: () => void }) {
-  const { can } = useAuth();
-  // Automated increases bypass the per-campaign budget cap, so only budget approvers get them.
+  const { user } = useAuth();
+  // Automated increases would bypass a per-campaign budget cap, so capped users don't get them.
+  const capped = user?.dailyBudgetLimit != null;
   const actionTypes = (Object.keys(RULE_ACTION_LABELS) as RuleActionType[]).filter(
-    (type) => type !== 'increase_budget' || can('budget:approve'),
+    (type) => type !== 'increase_budget' || !capped,
   );
   const [rule, setRule] = useState<NewRule>(INITIAL_RULE);
   const create = useMutation({

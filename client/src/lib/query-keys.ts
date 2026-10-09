@@ -8,6 +8,7 @@ export const queryKeys = {
   rules: ['rules'] as const,
   activity: ['activity'] as const,
   users: ['users'] as const,
+  settings: ['settings'] as const,
 };
 
 /** Any change to campaigns, rules or integrations affects these views. */
