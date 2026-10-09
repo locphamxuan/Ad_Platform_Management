@@ -12,22 +12,25 @@ Một nơi để quản lý **Facebook Ads, TikTok Ads và Google Ads**: kết n
 | Tạo đa kênh | Nhập một lần → chia ngân sách theo % → tạo trên từng kênh ở trạng thái **PAUSED**; mỗi kênh thành công/thất bại độc lập |
 | Tự động hoá | Rule `NẾU CPA/ROAS/Chi tiêu/CTR > / < ngưỡng trong N ngày THÌ tạm dừng / bật / ±% ngân sách`; chạy mỗi phút hoặc “Chạy ngay”; giới hạn an toàn ±50%/lần, trần 50 triệu/ngày |
 | Nhật ký | Ghi lại mọi thay đổi (ai, lúc nào, làm gì) của thành viên, rule và hệ thống |
-| Đăng nhập & phân quyền | 5 vai trò, phiên đăng nhập lưu trong MongoDB, mỗi vai trò có dashboard và menu riêng |
+| Đăng nhập & phân quyền | 4 cấp vai trò, phiên đăng nhập lưu trong MongoDB, mỗi vai trò có dashboard và menu riêng |
 
 ## Vai trò (actor)
 
-| Vai trò | Được làm gì | Trọng tâm trên Dashboard |
-|---|---|---|
-| Chủ sở hữu (Owner) | Toàn quyền; là vai trò duy nhất bổ nhiệm Owner/Admin (`workspace:manage`) | Toàn cảnh workspace: ngân sách đang chạy, dự kiến 30 ngày, cơ cấu đội |
-| Quản trị viên (Admin) | Kết nối nền tảng, quản lý thành viên cấp dưới, vận hành chiến dịch và rule | Vận hành hệ thống: trạng thái kết nối, rule, tài khoản bị khoá, hoạt động gần nhất |
-| Media Buyer | Tạo/bật/tắt/sửa ngân sách chiến dịch, quản lý và chạy rule | Việc cần xử lý: chiến dịch ROAS thấp, số đang chạy/tạm dừng |
-| Người xem (Viewer) | Xem mọi số liệu, không chỉnh sửa | Báo cáo chung (chế độ chỉ xem) |
-| Khách hàng (Client) | Chỉ xem báo cáo tổng quan | Báo cáo chung |
-| Rule / Hệ thống | Tác nhân tự động, được ghi riêng trong nhật ký | — |
+Bốn cấp, xếp từ cao xuống thấp. Mỗi cấp có **toàn bộ quyền của cấp dưới** và thêm phần riêng của mình:
 
-Quyền được kiểm tra ở server (`server/src/domain/permissions.ts`); client chỉ ẩn/hiện giao diện theo danh sách quyền server trả về trong `/api/auth/me`.
+| Cấp | Vai trò | Thêm quyền so với cấp dưới | Trọng tâm trên Dashboard |
+|---|---|---|---|
+| 4 | Chủ sở hữu (Owner) | Bổ nhiệm/gỡ Owner và Admin (`workspace:manage`) | Toàn cảnh workspace: ngân sách đang chạy, dự kiến 30 ngày, cơ cấu đội |
+| 3 | Quản trị viên (Admin) | Kết nối/ngắt nền tảng; quản lý Media Buyer và Khách hàng; duyệt ngân sách vượt hạn mức và rule tăng ngân sách (`budget:approve`) | Vận hành hệ thống: trạng thái kết nối, rule, tài khoản bị khoá, hoạt động gần nhất |
+| 2 | Media Buyer | Xem chiến dịch, rule, kết nối, nhật ký; bật/tắt/sửa ngân sách, tạo chiến dịch đa kênh; tạo và chạy rule | Việc cần xử lý: chiến dịch ROAS thấp, số đang chạy/tạm dừng |
+| 1 | Khách hàng (Client) | Xem báo cáo hiệu quả (dashboard) | Báo cáo chung |
+| — | Rule / Hệ thống | Tác nhân tự động, được ghi riêng trong nhật ký | — |
 
-**Tài khoản demo** (mật khẩu chung `adhub@123`): `owner@adhub.vn`, `admin@adhub.vn`, `buyer@adhub.vn`, `viewer@adhub.vn`, `client@adhub.vn`. Ở chế độ dev, trang đăng nhập có nút điền sẵn cho từng vai trò.
+**Hạn mức ngân sách của Media Buyer:** mỗi chiến dịch tối đa **10 triệu đ/ngày** (khi tạo đa kênh thì tính trên ngân sách của từng kênh). Mức cao hơn phải do Admin/Owner đặt. Media Buyer cũng không được bật hoặc chạy rule *tăng ngân sách*, vì automation có thể đẩy ngân sách vượt hạn mức. Họ vẫn tạo được rule này ở trạng thái tắt để Admin duyệt.
+
+Quyền được kiểm tra ở server (`server/src/domain/permissions.ts`); client chỉ ẩn/hiện giao diện theo danh sách quyền và hạn mức server trả về trong `/api/auth/me`. Vai trò "Người xem" (Viewer) cũ đã bị bỏ: tài khoản viewer có sẵn trong database được tự động chuyển thành Khách hàng khi server khởi động.
+
+**Tài khoản demo** (mật khẩu chung `adhub@123`): `owner@adhub.vn`, `admin@adhub.vn`, `buyer@adhub.vn`, `client@adhub.vn`. Ở chế độ dev, trang đăng nhập có nút điền sẵn cho từng vai trò.
 
 ## Công nghệ
 
