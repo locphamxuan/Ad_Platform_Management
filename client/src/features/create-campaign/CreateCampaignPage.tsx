@@ -3,6 +3,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ErrorMessage, Field, PageHeader, PlatformTag, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
 import { formatVnd } from '../../lib/format';
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
@@ -18,6 +19,7 @@ const DEFAULT_ALLOCATION: Allocation = {
 
 export function CreateCampaignPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const integrations = useQuery({ queryKey: queryKeys.integrations, queryFn: api.integrations.list });
   const [name, setName] = useState('');
   const [objective, setObjective] = useState<Objective>('sales');
@@ -82,7 +84,10 @@ export function CreateCampaignPage() {
                   ))}
                 </select>
               </Field>
-              <Field label="Tổng ngân sách mỗi ngày (VND)">
+              <Field
+                label="Tổng ngân sách mỗi ngày (VND)"
+                hint={user?.dailyBudgetLimit ? `Mỗi kênh tối đa ${formatVnd(user.dailyBudgetLimit)}/ngày` : undefined}
+              >
                 <input
                   className="input tabular-nums"
                   type="number"

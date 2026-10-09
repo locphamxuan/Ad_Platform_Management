@@ -29,14 +29,20 @@ export const RULE_ACTION_LABELS: Record<RuleActionType, string> = {
   decrease_budget: 'Giảm ngân sách %',
 };
 
-export const ROLES: Role[] = ['owner', 'admin', 'media_buyer', 'viewer', 'client'];
+/** From most to least privileged; each level includes everything below it. */
+export const ROLES: Role[] = ['owner', 'admin', 'media_buyer', 'client'];
 
 export const ROLE_META: Record<Role, { label: string; description: string }> = {
-  owner: { label: 'Chủ sở hữu', description: 'Quản trị workspace, bổ nhiệm quản trị viên, theo dõi ngân sách toàn đội' },
-  admin: { label: 'Quản trị viên', description: 'Vận hành hằng ngày: kết nối nền tảng, quản lý thành viên cấp dưới' },
-  media_buyer: { label: 'Media Buyer', description: 'Vận hành chiến dịch và rule tự động' },
-  viewer: { label: 'Người xem', description: 'Xem mọi số liệu, không chỉnh sửa' },
-  client: { label: 'Khách hàng', description: 'Chỉ xem báo cáo tổng quan' },
+  owner: { label: 'Chủ sở hữu', description: 'Toàn quyền như Quản trị viên, thêm quyền bổ nhiệm hoặc gỡ Chủ sở hữu và Quản trị viên' },
+  admin: {
+    label: 'Quản trị viên',
+    description: 'Kết nối nền tảng, quản lý Media Buyer và Khách hàng, duyệt ngân sách vượt hạn mức và rule tăng ngân sách',
+  },
+  media_buyer: {
+    label: 'Media Buyer',
+    description: 'Vận hành chiến dịch và rule; ngân sách mỗi chiến dịch tối đa 10 triệu/ngày',
+  },
+  client: { label: 'Khách hàng', description: 'Chỉ xem báo cáo hiệu quả quảng cáo' },
 };
 
 /** Day counts as strings because they round-trip through the URL. */

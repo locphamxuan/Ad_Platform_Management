@@ -80,6 +80,7 @@ export function CampaignsPage() {
 
 function CampaignTable({ campaigns, editable }: { campaigns: Campaign[]; editable: boolean }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const update = useMutation({
     mutationFn: ({ id, changes }: { id: string; changes: { status?: CampaignStatus; dailyBudget?: number } }) =>
       api.campaigns.update(id, changes),
@@ -129,6 +130,7 @@ function CampaignTable({ campaigns, editable }: { campaigns: Campaign[]; editabl
                   <BudgetEditor
                     label={`Ngân sách ngày của ${c.name}`}
                     value={c.dailyBudget}
+                    max={user?.dailyBudgetLimit ?? undefined}
                     disabled={!editable || !c.connected || update.isPending}
                     onSave={(dailyBudget) => update.mutate({ id: c.id, changes: { dailyBudget } })}
                   />

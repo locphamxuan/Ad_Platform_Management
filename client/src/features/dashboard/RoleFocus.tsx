@@ -29,11 +29,6 @@ export function RoleFocus({ range }: { range: Range }) {
     owner: <OwnerFocus range={range} />,
     admin: <AdminFocus />,
     media_buyer: <BuyerFocus range={range} />,
-    viewer: (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-sm text-muted">
-        Bạn đang ở chế độ chỉ xem: có thể xem mọi số liệu nhưng không thay đổi chiến dịch, rule hay kết nối.
-      </p>
-    ),
   };
   return panels[user.role] ?? null;
 }

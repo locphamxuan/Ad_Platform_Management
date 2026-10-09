@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { ErrorMessage, Field } from '../../components/ui';
 import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { PLATFORM_META, PLATFORMS, RULE_ACTION_LABELS, RULE_METRIC_LABELS } from '../../lib/constants';
 import type { NewRule, RuleActionType, RuleMetric, RuleOperator } from '../../lib/types';
 
@@ -16,6 +17,11 @@ const INITIAL_RULE: NewRule = {
 const isBudgetAction = (type: RuleActionType) => type === 'increase_budget' || type === 'decrease_budget';
 
 export function RuleForm({ onCreated }: { onCreated: () => void }) {
+  const { can } = useAuth();
+  // Automated increases bypass the per-campaign budget cap, so only budget approvers get them.
+  const actionTypes = (Object.keys(RULE_ACTION_LABELS) as RuleActionType[]).filter(
+    (type) => type !== 'increase_budget' || can('budget:approve'),
+  );
   const [rule, setRule] = useState<NewRule>(INITIAL_RULE);
   const create = useMutation({
     mutationFn: api.rules.create,
@@ -129,9 +135,9 @@ export function RuleForm({ onCreated }: { onCreated: () => void }) {
           value={rule.action.type}
           onChange={(e) => setActionType(e.target.value as RuleActionType)}
         >
-          {Object.entries(RULE_ACTION_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
+          {actionTypes.map((type) => (
+            <option key={type} value={type}>
+              {RULE_ACTION_LABELS[type]}
             </option>
           ))}
         </select>

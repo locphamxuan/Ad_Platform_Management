@@ -13,6 +13,8 @@ export function RulesPage() {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const canManage = can('rule:manage');
+  /** Mirrors the server: running or enabling a budget increase needs budget approval. */
+  const isLocked = (rule: Rule) => rule.action.type === 'increase_budget' && !can('budget:approve');
   const [lastRun, setLastRun] = useState<RuleRunResult | null>(null);
   const { data, isLoading, error } = useQuery({ queryKey: queryKeys.rules, queryFn: api.rules.list });
 
@@ -68,13 +70,24 @@ export function RulesPage() {
                 </dl>
 
                 {canManage && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => run.mutate(rule.id)}>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-primary btn-sm"
+                      disabled={busy || isLocked(rule)}
+                      onClick={() => run.mutate(rule.id)}
+                    >
                       Chạy ngay
                     </button>
-                    <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => toggle.mutate(rule)}>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm"
+                      disabled={busy || (!rule.enabled && isLocked(rule))}
+                      onClick={() => toggle.mutate(rule)}
+                    >
                       {rule.enabled ? 'Tắt rule' : 'Bật rule'}
                     </button>
+                    {isLocked(rule) && <span className="text-xs text-muted">Cần Quản trị viên để bật hoặc chạy</span>}
                     <button
                       type="button"
                       className="btn-ghost btn-sm ml-auto text-negative hover:bg-negative-soft hover:text-negative"

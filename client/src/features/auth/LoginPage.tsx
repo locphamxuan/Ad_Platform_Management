@@ -11,7 +11,6 @@ const DEMO_EMAIL: Record<Role, string> = {
   owner: 'owner@adhub.vn',
   admin: 'admin@adhub.vn',
   media_buyer: 'buyer@adhub.vn',
-  viewer: 'viewer@adhub.vn',
   client: 'client@adhub.vn',
 };
 

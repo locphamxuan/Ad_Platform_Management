@@ -5,12 +5,14 @@ interface BudgetEditorProps {
   /** Accessible name, e.g. which campaign this budget belongs to */
   label: string;
   value: number;
+  /** Highest budget this user may set; the server rejects anything above it */
+  max?: number;
   disabled?: boolean;
   onSave: (value: number) => void;
 }
 
 /** Inline editor: shows the budget, switches to an input on click. Enter saves, Escape cancels. */
-export function BudgetEditor({ label, value, disabled, onSave }: BudgetEditorProps) {
+export function BudgetEditor({ label, value, max, disabled, onSave }: BudgetEditorProps) {
   const [draft, setDraft] = useState<string | null>(null);
 
   if (disabled) return <span className="tabular-nums">{formatVnd(value)}</span>;
@@ -42,7 +44,9 @@ export function BudgetEditor({ label, value, disabled, onSave }: BudgetEditorPro
       type="number"
       inputMode="numeric"
       min={1}
+      max={max}
       step={1000}
+      title={max ? `Tối đa ${formatVnd(max)}/ngày` : undefined}
       className="input h-8 w-32 text-right tabular-nums"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
