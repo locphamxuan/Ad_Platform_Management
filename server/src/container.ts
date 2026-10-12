@@ -1,7 +1,9 @@
 import type { Db } from 'mongodb';
+import { FacebookAdsAdapter } from './adapters/meta/facebook-ads.adapter.js';
 import { MockAdPlatformAdapter } from './adapters/mock/mock-ad-platform.adapter.js';
 import { PLATFORM_PROFILES } from './adapters/mock/platform-profiles.js';
 import { PlatformRegistry } from './adapters/platform-registry.js';
+import { metaConfig, type MetaConfig } from './config/env.js';
 import { ActivityRepository } from './repositories/activity.repository.js';
 import { CampaignRepository } from './repositories/campaign.repository.js';
 import { IntegrationRepository } from './repositories/integration.repository.js';
@@ -22,11 +24,13 @@ import { UnifiedCampaignService } from './services/unified-campaign.service.js';
 import { UserService } from './services/user.service.js';
 
 /** Composition root: the only place that knows concrete implementations. */
-export function createContainer(db: Db) {
+export function createContainer(db: Db, meta: MetaConfig | null = metaConfig) {
   const registry = new PlatformRegistry();
   for (const profile of Object.values(PLATFORM_PROFILES)) {
     registry.register(new MockAdPlatformAdapter(profile));
   }
+  // Real Meta credentials replace the mock Facebook channel; TikTok and Google stay mocked.
+  if (meta) registry.register(new FacebookAdsAdapter(meta));
 
   const repositories = {
     integrations: new IntegrationRepository(db),

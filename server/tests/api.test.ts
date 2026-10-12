@@ -56,7 +56,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     client = connection.client;
     const db = connection.db;
     await seedDatabase(db);
-    server = createApp(createContainer(db)).listen(0);
+    server = createApp(createContainer(db, null)).listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 

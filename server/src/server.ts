@@ -1,7 +1,7 @@
 import type { Server } from 'node:http';
 import type { Express } from 'express';
 import { createApp } from './app.js';
-import { env } from './config/env.js';
+import { env, metaConfig } from './config/env.js';
 import { createContainer } from './container.js';
 import { connectMongo } from './db/mongo.js';
 import { startAutomationScheduler } from './jobs/automation-scheduler.js';
@@ -38,6 +38,11 @@ const { client, db } = await connectMongo(env.MONGODB_URI, env.MONGODB_DB).catch
   process.exit(1);
 });
 console.log(`MongoDB connected: ${env.MONGODB_URI} (database "${env.MONGODB_DB}")`);
+console.log(
+  metaConfig
+    ? `Facebook: Meta Marketing API ${metaConfig.apiVersion}, ad account ${metaConfig.adAccountId}`
+    : 'Facebook: mock adapter (no Meta credentials)',
+);
 const container = createContainer(db);
 
 let server: Server;
