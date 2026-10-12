@@ -21,10 +21,17 @@ export class SyncService {
     ]);
     const targets = active.filter((c) => connected.has(c.platform));
 
-    const rows = await Promise.all(
+    // One failing campaign (e.g. a Meta API error) must not block the others.
+    const results = await Promise.allSettled(
       targets.map((c) => this.registry.get(c.platform).fetchDailyMetrics(c, date)),
     );
-    await this.metrics.upsertMany(rows);
+    const rows = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+    const failures = results.length - rows.length;
+    if (failures > 0) {
+      const reasons = new Set(results.flatMap((r) => (r.status === 'rejected' ? [(r.reason as Error).message] : [])));
+      console.warn(`[sync] ${failures} campaign(s) skipped: ${[...reasons].join(' | ')}`);
+    }
+    if (rows.length > 0) await this.metrics.upsertMany(rows);
     return rows.length;
   }
 }
