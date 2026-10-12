@@ -1,0 +1,254 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { ErrorMessage, Field, PageHeader, PlatformTag, Tag } from '../../components/ui';
+import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
+import { OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
+import { formatVnd } from '../../lib/format';
+import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
+import type { CreateUnifiedCampaignInput, Objective, Platform, PlatformPublishResult } from '../../lib/types';
+
+type Allocation = Record<Platform, { enabled: boolean; percent: number }>;
+
+const DEFAULT_ALLOCATION: Allocation = {
+  facebook: { enabled: true, percent: 40 },
+  tiktok: { enabled: true, percent: 30 },
+  google: { enabled: true, percent: 30 },
+};
+
+export function CreateCampaignPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const integrations = useQuery({ queryKey: queryKeys.integrations, queryFn: api.integrations.list });
+  const [name, setName] = useState('');
+  const [objective, setObjective] = useState<Objective>('sales');
+  const [totalDailyBudget, setTotalDailyBudget] = useState(1_000_000);
+  const [allocation, setAllocation] = useState<Allocation>(DEFAULT_ALLOCATION);
+  const [creative, setCreative] = useState({ headline: '', primaryText: '', landingUrl: 'https://' });
+
+  const create = useMutation({
+    mutationFn: (input: CreateUnifiedCampaignInput) => api.campaigns.createUnified(input),
+    onSuccess: () => invalidateCampaignViews(queryClient),
+  });
+
+  const selected = PLATFORMS.filter((p) => allocation[p].enabled);
+  const percentSum = selected.reduce((sum, p) => sum + allocation[p].percent, 0);
+  const isAllocationValid = selected.length > 0 && percentSum === 100;
+  const connected = new Set(integrations.data?.filter((i) => i.connected).map((i) => i.platform));
+
+  const updateAllocation = (platform: Platform, changes: Partial<Allocation[Platform]>) =>
+    setAllocation((prev) => ({ ...prev, [platform]: { ...prev[platform], ...changes } }));
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    create.mutate({
+      name,
+      objective,
+      totalDailyBudget,
+      allocations: selected.map((platform) => ({ platform, percent: allocation[platform].percent })),
+      creative,
+    });
+  };
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Tạo một lần, chạy mọi kênh"
+        title="Tạo chiến dịch đa kênh"
+        description="AdHub tạo chiến dịch trên từng nền tảng ở trạng thái Tạm dừng để bạn kiểm tra trước khi chạy."
+      />
+      <form onSubmit={onSubmit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-6">
+          <Step number="01" title="Thông tin chiến dịch">
+            <Field label="Tên chiến dịch">
+              <input
+                className="input"
+                name="name"
+                required
+                minLength={3}
+                maxLength={120}
+                autoComplete="off"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="VD: Sale 11.11 – BST mùa đông"
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Mục tiêu">
+                <select className="input" value={objective} onChange={(e) => setObjective(e.target.value as Objective)}>
+                  {Object.entries(OBJECTIVE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                label="Tổng ngân sách mỗi ngày (VND)"
+                hint={user?.dailyBudgetLimit ? `Mỗi kênh tối đa ${formatVnd(user.dailyBudgetLimit)}/ngày` : undefined}
+              >
+                <input
+                  className="input tabular-nums"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1000}
+                  required
+                  value={totalDailyBudget}
+                  onChange={(e) => setTotalDailyBudget(Number(e.target.value))}
+                />
+              </Field>
+            </div>
+          </Step>
+
+          <Step
+            number="02"
+            title="Chọn nền tảng và chia ngân sách"
+            aside={
+              <Tag tone={percentSum === 100 ? 'positive' : 'negative'}>
+                <span className="tabular-nums">Tổng {percentSum}%</span>
+              </Tag>
+            }
+          >
+            <ul className="divide-y divide-line rounded-lg border border-line">
+              {PLATFORMS.map((platform) => {
+                const { enabled, percent } = allocation[platform];
+                return (
+                  <li key={platform} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-ink"
+                        checked={enabled}
+                        onChange={(e) => updateAllocation(platform, { enabled: e.target.checked })}
+                      />
+                      <PlatformTag platform={platform} />
+                      {integrations.data && !connected.has(platform) && <Tag tone="caution">Chưa kết nối</Tag>}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        aria-label={`Tỉ lệ ngân sách cho ${PLATFORM_META[platform].label} (%)`}
+                        className="input h-9 w-20 text-right tabular-nums"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={100}
+                        disabled={!enabled}
+                        value={percent}
+                        onChange={(e) => updateAllocation(platform, { percent: Number(e.target.value) })}
+                      />
+                      <span className="text-sm text-muted">%</span>
+                      <span className="w-28 text-right text-sm font-medium tabular-nums">
+                        {enabled ? formatVnd((totalDailyBudget * percent) / 100) : '—'}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Step>
+
+          <Step number="03" title="Nội dung quảng cáo">
+            <Field label="Tiêu đề" hint="Tối đa 100 ký tự">
+              <input
+                className="input"
+                required
+                maxLength={100}
+                autoComplete="off"
+                value={creative.headline}
+                onChange={(e) => setCreative({ ...creative, headline: e.target.value })}
+              />
+            </Field>
+            <Field label="Nội dung chính" hint="Tối đa 500 ký tự">
+              <textarea
+                className="input"
+                rows={4}
+                required
+                maxLength={500}
+                value={creative.primaryText}
+                onChange={(e) => setCreative({ ...creative, primaryText: e.target.value })}
+              />
+            </Field>
+            <Field label="Link đích">
+              <input
+                className="input"
+                type="url"
+                inputMode="url"
+                spellCheck={false}
+                required
+                value={creative.landingUrl}
+                onChange={(e) => setCreative({ ...creative, landingUrl: e.target.value })}
+              />
+            </Field>
+          </Step>
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-10">
+          <div className="card-pad space-y-4">
+            <p className="eyebrow">Xác nhận</p>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Số chiến dịch</dt>
+                <dd className="font-medium tabular-nums">{selected.length}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Tổng mỗi ngày</dt>
+                <dd className="font-medium tabular-nums">{formatVnd(totalDailyBudget)}</dd>
+              </div>
+            </dl>
+            {!isAllocationValid && (
+              <p className="text-sm text-negative">Tỉ lệ phân bổ của các nền tảng đã chọn phải bằng đúng 100%.</p>
+            )}
+            <button type="submit" className="btn-primary h-10 w-full" disabled={!isAllocationValid || create.isPending}>
+              {create.isPending ? 'Đang tạo…' : 'Tạo trên các nền tảng đã chọn'}
+            </button>
+            <ErrorMessage error={create.error} />
+          </div>
+          {create.data && <PublishResults results={create.data.results} />}
+        </aside>
+      </form>
+    </>
+  );
+}
+
+function Step({ number, title, aside, children }: { number: string; title: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="card-pad">
+      <div className="mb-5 flex items-baseline justify-between gap-3">
+        <h2 className="flex items-baseline gap-3">
+          <span className="text-xs font-semibold tabular-nums text-accent">{number}</span>
+          <span className="section-title">{title}</span>
+        </h2>
+        {aside}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function PublishResults({ results }: { results: PlatformPublishResult[] }) {
+  return (
+    <div className="card-pad space-y-3" aria-live="polite">
+      <p className="eyebrow">Kết quả</p>
+      <ul className="space-y-3">
+        {results.map((r) => (
+          <li key={r.platform} className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <PlatformTag platform={r.platform} />
+              {r.success ? <Tag tone="positive">Đã tạo</Tag> : <Tag tone="negative">Thất bại</Tag>}
+            </div>
+            <p className={`text-xs ${r.success ? 'text-muted' : 'text-negative'}`}>
+              {r.success
+                ? `${formatVnd(r.campaign.dailyBudget)}/ngày · ${r.campaign.platformObjective}`
+                : r.error}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <Link to="/campaigns" className="btn-secondary w-full">
+        Xem danh sách chiến dịch
+      </Link>
+    </div>
+  );
+}

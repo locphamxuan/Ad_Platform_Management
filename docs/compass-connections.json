@@ -1,0 +1,13 @@
+{
+  "type": "Compass Connections",
+  "version": { "$numberInt": "1" },
+  "connections": [
+    {
+      "id": "6f1c2a4e-5d0b-4c0d-9a51-0d0c4e5a2b11",
+      "connectionOptions": {
+        "connectionString": "mongodb://localhost:27017/adhub?directConnection=true"
+      },
+      "favorite": { "name": "AdHub (local Docker)", "color": "color2" }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { api, setUnauthorizedHandler, tokenStore } from './api';
+import type { AuthUser, Permission } from './types';
+
+interface AuthContextValue {
+  user: AuthUser | null;
+  /** True until the stored session has been checked against the server */
+  restoring: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  can: (permission: Permission) => boolean;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [restoring, setRestoring] = useState(() => tokenStore.get() !== null);
+
+  const clearSession = useCallback(() => {
+    tokenStore.set(null);
+    setUser(null);
+    // Cached data belongs to the previous user's role; never show it to the next one.
+    queryClient.clear();
+  }, [queryClient]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearSession);
+    if (!tokenStore.get()) return;
+    api.auth
+      .me()
+      .then(setUser)
+      .catch(clearSession)
+      .finally(() => setRestoring(false));
+  }, [clearSession]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      restoring,
+      login: async (email, password) => {
+        const session = await api.auth.login(email, password);
+        tokenStore.set(session.token);
+        setUser(session.user);
+      },
+      logout: async () => {
+        await api.auth.logout().catch(() => undefined);
+        clearSession();
+      },
+      can: (permission) => user?.permissions.includes(permission) ?? false,
+    }),
+    [user, restoring, clearSession],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthContextValue {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside <AuthProvider>');
+  return context;
+}
