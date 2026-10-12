@@ -13,6 +13,14 @@ export type AppOptions = {
 export function createApp(container: Container, options: AppOptions = {}) {
   const app = express();
   app.disable('x-powered-by');
+  // Behind Cloudflare, plain-http visitors must not send passwords unencrypted; local requests are untouched.
+  app.use((req, res, next) => {
+    if (req.headers['cf-connecting-ip'] && req.headers['x-forwarded-proto'] === 'http') {
+      res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+      return;
+    }
+    next();
+  });
   app.use(cors());
   app.use(express.json());
   app.get('/health', (_req, res) => {

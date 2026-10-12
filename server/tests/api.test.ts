@@ -90,6 +90,15 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect(me.body).not.toHaveProperty('passwordHash');
     });
 
+    it('redirects plain-http requests that arrive through Cloudflare to https', async () => {
+      const headers = { 'CF-Connecting-IP': '203.0.113.7', 'X-Forwarded-Proto': 'http' };
+      const response = await fetch(`${baseUrl}/api/auth/me?x=1`, { headers, redirect: 'manual' });
+      expect(response.status).toBe(308);
+      expect(response.headers.get('location')).toBe(`https://${new URL(baseUrl).host}/api/auth/me?x=1`);
+      const secure = await fetch(`${baseUrl}/health`, { headers: { ...headers, 'X-Forwarded-Proto': 'https' } });
+      expect(secure.status).toBe(200);
+    });
+
     it('invalidates the token on logout', async () => {
       const { token } = (await login('buyer@adhub.vn')).body;
       expect((await call('/auth/logout', { method: 'POST', token })).status).toBe(204);
