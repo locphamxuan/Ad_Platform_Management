@@ -1,7 +1,7 @@
 import type { Server } from 'node:http';
 import type { Express } from 'express';
 import { createApp } from './app.js';
-import { env, metaConfig } from './config/env.js';
+import { env, metaConfig, seedPasswords } from './config/env.js';
 import { createContainer } from './container.js';
 import { connectMongo } from './db/mongo.js';
 import { startAutomationScheduler } from './jobs/automation-scheduler.js';
@@ -47,9 +47,9 @@ const container = createContainer(db);
 
 let server: Server;
 try {
-  const seeded = await seedIfEmpty(db);
+  const seeded = await seedIfEmpty(db, seedPasswords);
   if (seeded) console.log(seeded);
-  server = await listen(createApp(container), env.PORT);
+  server = await listen(createApp(container, { clientDist: env.CLIENT_DIST }), env.PORT);
 } catch (error) {
   console.error(`[startup] ${describeStartupError(error)}`);
   await client.close();
@@ -58,7 +58,9 @@ try {
 
 // Start background automation only once the API is actually serving.
 const scheduler = startAutomationScheduler(container);
-console.log(`AdHub API listening on http://localhost:${env.PORT}`);
+console.log(
+  `AdHub API listening on http://localhost:${env.PORT}` + (env.CLIENT_DIST ? ` (serving client from ${env.CLIENT_DIST})` : ''),
+);
 
 let shuttingDown = false;
 async function shutdown(signal: string) {

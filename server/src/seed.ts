@@ -47,8 +47,14 @@ const SEED_RULES: Omit<Rule, 'id' | 'createdAt'>[] = [
   },
 ];
 
-/** Shared by every demo account; change it before exposing the app outside localhost. */
+/**
+ * Local development and tests only. Anything reachable outside localhost must seed with
+ * per-role passwords (SEED_PASSWORD_* in server/.env), which production startup enforces.
+ */
 export const DEMO_PASSWORD = 'adhub@123';
+
+/** One password per demo account; missing roles fall back to DEMO_PASSWORD. */
+export type SeedPasswords = Partial<Record<Role, string>>;
 
 export const DEMO_USERS: { email: string; name: string; role: Role }[] = [
   { email: 'owner@adhub.vn', name: 'Nguyễn Minh Chủ', role: 'owner' },
@@ -57,10 +63,22 @@ export const DEMO_USERS: { email: string; name: string; role: Role }[] = [
   { email: 'client@adhub.vn', name: 'Bosa Fashion (Khách hàng)', role: 'client' },
 ];
 
-async function buildDemoUsers(now: string): Promise<User[]> {
-  // One hash for all demo accounts keeps seeding fast; each still verifies independently.
-  const passwordHash = await hashPassword(DEMO_PASSWORD);
-  return DEMO_USERS.map((user) => ({ ...user, id: randomUUID(), active: true, passwordHash, createdAt: now }));
+async function buildDemoUsers(now: string, passwords: SeedPasswords = {}): Promise<User[]> {
+  // Hash each distinct password once; accounts sharing the fallback share its hash.
+  const hashes = new Map<string, string>();
+  const hashFor = async (password: string) => {
+    if (!hashes.has(password)) hashes.set(password, await hashPassword(password));
+    return hashes.get(password)!;
+  };
+  return Promise.all(
+    DEMO_USERS.map(async (user) => ({
+      ...user,
+      id: randomUUID(),
+      active: true,
+      passwordHash: await hashFor(passwords[user.role] ?? DEMO_PASSWORD),
+      createdAt: now,
+    })),
+  );
 }
 
 const isEmpty = async (db: Db, name: string) => (await db.collection(name).countDocuments()) === 0;
@@ -69,20 +87,20 @@ const isEmpty = async (db: Db, name: string) => (await db.collection(name).count
  * Seeds only what is missing, so databases created before user accounts existed
  * get the demo users without losing their campaign data.
  */
-export async function seedIfEmpty(db: Db): Promise<string | null> {
+export async function seedIfEmpty(db: Db, passwords: SeedPasswords = {}): Promise<string | null> {
   if (await isEmpty(db, COLLECTIONS.integrations)) {
-    await seedDatabase(db);
+    await seedDatabase(db, passwords);
     return 'Database empty — seeded demo data and accounts';
   }
   if (await isEmpty(db, COLLECTIONS.users)) {
-    await db.collection(COLLECTIONS.users).insertMany(await buildDemoUsers(new Date().toISOString()));
+    await db.collection(COLLECTIONS.users).insertMany(await buildDemoUsers(new Date().toISOString(), passwords));
     return 'No users found — seeded demo accounts';
   }
   return null;
 }
 
 /** Resets all collections with demo data (until real platform APIs are approved). */
-export async function seedDatabase(db: Db): Promise<void> {
+export async function seedDatabase(db: Db, passwords: SeedPasswords = {}): Promise<void> {
   const random = mulberry32(42);
   const now = new Date().toISOString();
 
@@ -139,7 +157,7 @@ export async function seedDatabase(db: Db): Promise<void> {
     metrics,
     rules,
     activities,
-    users: await buildDemoUsers(now),
+    users: await buildDemoUsers(now, passwords),
     sessions: [],
     settings: [],
   };

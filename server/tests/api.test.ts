@@ -12,7 +12,7 @@ import { DEMO_PASSWORD, seedDatabase } from '../src/seed.js';
  * Each run uses a throwaway database; the suite is skipped when MongoDB is down.
  */
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017';
-const DB_NAME = `adhub_test_${process.pid}`;
+const DB_NAME = `${process.env.TEST_DB_PREFIX ?? 'adhub_test'}_${process.pid}`;
 
 async function isMongoReachable(): Promise<boolean> {
   const probe = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 1500 });

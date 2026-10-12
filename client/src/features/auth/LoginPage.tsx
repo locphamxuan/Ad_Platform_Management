@@ -1,18 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { ErrorMessage, Field } from '../../components/ui';
+import { ErrorMessage, Field, SampleDataBanner } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { ROLE_META, ROLES } from '../../lib/constants';
-import type { Role } from '../../lib/types';
-
-/** Seeded by the server (see server/src/seed.ts); offered only in development builds. */
-const DEMO_PASSWORD = 'adhub@123';
-const DEMO_EMAIL: Record<Role, string> = {
-  owner: 'owner@adhub.vn',
-  admin: 'admin@adhub.vn',
-  media_buyer: 'buyer@adhub.vn',
-  client: 'client@adhub.vn',
-};
 
 export function LoginPage() {
   const { user, login } = useAuth();
@@ -40,7 +30,9 @@ export function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
+    <div className="flex min-h-screen flex-col">
+      <SampleDataBanner />
+      <div className="grid flex-1 lg:grid-cols-[1.1fr_1fr]">
       <section className="hidden flex-col justify-between bg-ink px-14 py-12 text-white lg:flex">
         <p className="text-lg font-bold tracking-tight" translate="no">
           AdHub<span className="text-accent">.</span>
@@ -103,30 +95,9 @@ export function LoginPage() {
               {submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}
             </button>
           </form>
-
-          {import.meta.env.DEV && (
-            <div className="mt-10 border-t border-line pt-6">
-              <p className="eyebrow">Tài khoản demo</p>
-              <p className="mt-1 text-xs text-muted">Chọn một vai trò để điền sẵn thông tin đăng nhập.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {ROLES.map((role) => (
-                  <button
-                    key={role}
-                    type="button"
-                    className="btn-secondary btn-sm"
-                    onClick={() => {
-                      setEmail(DEMO_EMAIL[role]);
-                      setPassword(DEMO_PASSWORD);
-                    }}
-                  >
-                    {ROLE_META[role].label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </section>
+      </div>
     </div>
   );
 }

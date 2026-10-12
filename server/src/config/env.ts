@@ -1,18 +1,47 @@
 import { z } from 'zod';
+import type { Role } from '../domain/types.js';
+import type { SeedPasswords } from '../seed.js';
 
 /** Blank lines in .env (`KEY=`) count as "not set". */
 const blankAsUnset = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
 const required = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blankAsUnset, schema);
 const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blankAsUnset, schema.optional());
 
-const envSchema = z.object({
-  PORT: z.coerce.number().int().positive().default(4000),
-  MONGODB_URI: z.string().min(1).default('mongodb://localhost:27017'),
-  MONGODB_DB: z.string().min(1).default('adhub'),
-});
+const seedPassword = optional(z.string().min(12, 'SEED_PASSWORD_* must be at least 12 characters'));
+const SEED_PASSWORD_KEYS = {
+  owner: 'SEED_PASSWORD_OWNER',
+  admin: 'SEED_PASSWORD_ADMIN',
+  media_buyer: 'SEED_PASSWORD_MEDIA_BUYER',
+  client: 'SEED_PASSWORD_CLIENT',
+} as const satisfies Record<Role, string>;
+
+const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z.coerce.number().int().positive().default(4000),
+    MONGODB_URI: z.string().min(1).default('mongodb://localhost:27017'),
+    MONGODB_DB: z.string().min(1).default('adhub'),
+    /** Built client (client/dist) to serve from the API port; unset in development (Vite serves it). */
+    CLIENT_DIST: optional(z.string().trim().min(1)),
+    SEED_PASSWORD_OWNER: seedPassword,
+    SEED_PASSWORD_ADMIN: seedPassword,
+    SEED_PASSWORD_MEDIA_BUYER: seedPassword,
+    SEED_PASSWORD_CLIENT: seedPassword,
+  })
+  .superRefine((value, ctx) => {
+    // Production must never seed the well-known development password.
+    if (value.NODE_ENV !== 'production') return;
+    for (const key of Object.values(SEED_PASSWORD_KEYS)) {
+      if (!value[key]) ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required in production` });
+    }
+  });
 
 /** Validated once at startup: fail fast on bad core configuration. */
 export const env = envSchema.parse(process.env);
+
+export const seedPasswords: SeedPasswords = Object.fromEntries(
+  Object.entries(SEED_PASSWORD_KEYS).flatMap(([role, key]) => (env[key] ? [[role, env[key]]] : [])),
+);
 
 const numericId = (name: string) => z.string().trim().regex(/^\d+$/, `${name} must contain digits only`);
 
