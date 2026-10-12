@@ -7,6 +7,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { CampaignsPage } from './features/campaigns/CampaignsPage';
 import { CreateCampaignPage } from './features/create-campaign/CreateCampaignPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
+import { DesignOptionPage, DesignOptionsIndex } from './features/design-options/DesignOptionsPage';
 import { IntegrationsPage } from './features/integrations/IntegrationsPage';
 import { RulesPage } from './features/rules/RulesPage';
 import { UsersPage } from './features/users/UsersPage';
@@ -20,6 +21,9 @@ export function App() {
   return (
     <Routes>
       <Route path="login" element={<LoginPage />} />
+      {/* Design options bring their own page shell, so they sit outside <Layout>. */}
+      <Route path="phuong-an" element={<RequireAuth>{guard('report:view', <DesignOptionsIndex />)}</RequireAuth>} />
+      <Route path="phuong-an/:id" element={<RequireAuth>{guard('report:view', <DesignOptionPage />)}</RequireAuth>} />
       <Route
         element={
           <RequireAuth>
