@@ -46,7 +46,7 @@ export function LoginPage() {
           AdHub<span className="text-accent">.</span>
         </p>
         <div className="max-w-md">
-          <p className="eyebrow text-white/45">Một trạm điều khiển cho mọi kênh</p>
+          <p className="eyebrow text-white/45">Một nền tảng, đa kênh</p>
           <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight">
             Quản lý Facebook, TikTok và Google Ads ở cùng một nơi.
           </h1>
