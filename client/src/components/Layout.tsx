@@ -3,7 +3,6 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { ROLE_META } from '../lib/constants';
 import { NAV_ITEMS } from '../lib/navigation';
-import { SampleDataBanner } from './ui';
 
 export function Layout() {
   const { user, can, logout } = useAuth();
@@ -95,14 +94,11 @@ export function Layout() {
         )}
       </aside>
 
-      <div className="min-w-0 flex-1">
-        <SampleDataBanner />
-        <main id="main" className="px-4 py-8 sm:px-8 lg:px-12 lg:py-10">
-          <div className="mx-auto max-w-7xl">
-            <Outlet />
-          </div>
-        </main>
-      </div>
+      <main id="main" className="min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-10">
+        <div className="mx-auto max-w-7xl">
+          <Outlet />
+        </div>
+      </main>
     </div>
   );
 }
