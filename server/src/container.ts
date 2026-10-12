@@ -1,9 +1,11 @@
 import type { Db } from 'mongodb';
+import { GoogleAdsAdapter } from './adapters/google/google-ads.adapter.js';
 import { FacebookAdsAdapter } from './adapters/meta/facebook-ads.adapter.js';
 import { MockAdPlatformAdapter } from './adapters/mock/mock-ad-platform.adapter.js';
 import { PLATFORM_PROFILES } from './adapters/mock/platform-profiles.js';
 import { PlatformRegistry } from './adapters/platform-registry.js';
-import { metaConfig, type MetaConfig } from './config/env.js';
+import { TikTokAdsAdapter } from './adapters/tiktok/tiktok-ads.adapter.js';
+import { platformCredentials, type PlatformCredentials } from './config/env.js';
 import { ActivityRepository } from './repositories/activity.repository.js';
 import { CampaignRepository } from './repositories/campaign.repository.js';
 import { IntegrationRepository } from './repositories/integration.repository.js';
@@ -24,13 +26,15 @@ import { UnifiedCampaignService } from './services/unified-campaign.service.js';
 import { UserService } from './services/user.service.js';
 
 /** Composition root: the only place that knows concrete implementations. */
-export function createContainer(db: Db, meta: MetaConfig | null = metaConfig) {
+export function createContainer(db: Db, credentials: Partial<PlatformCredentials> = platformCredentials) {
   const registry = new PlatformRegistry();
   for (const profile of Object.values(PLATFORM_PROFILES)) {
     registry.register(new MockAdPlatformAdapter(profile));
   }
-  // Real Meta credentials replace the mock Facebook channel; TikTok and Google stay mocked.
-  if (meta) registry.register(new FacebookAdsAdapter(meta));
+  // Real credentials replace that platform's mock; platforms without credentials stay simulated.
+  if (credentials.meta) registry.register(new FacebookAdsAdapter(credentials.meta));
+  if (credentials.tiktok) registry.register(new TikTokAdsAdapter(credentials.tiktok));
+  if (credentials.google) registry.register(new GoogleAdsAdapter(credentials.google));
 
   const repositories = {
     integrations: new IntegrationRepository(db),

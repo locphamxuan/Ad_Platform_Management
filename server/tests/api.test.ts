@@ -56,7 +56,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     client = connection.client;
     const db = connection.db;
     await seedDatabase(db);
-    server = createApp(createContainer(db, null)).listen(0);
+    server = createApp(createContainer(db, {})).listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -223,7 +223,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
         pageId: '1',
         apiVersion: 'v23.0',
       };
-      const liveServer = createApp(createContainer(client.db(DB_NAME), meta)).listen(0);
+      const liveServer = createApp(createContainer(client.db(DB_NAME), { meta })).listen(0);
       await new Promise((resolve) => liveServer.once('listening', resolve));
       const liveUrl = `http://127.0.0.1:${(liveServer.address() as AddressInfo).port}/api`;
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` };
