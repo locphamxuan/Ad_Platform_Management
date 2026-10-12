@@ -19,6 +19,8 @@ export interface CreatePlatformCampaignResult {
 export interface IAdPlatformAdapter {
   readonly platform: Platform;
   readonly displayName: string;
+  /** True when calls reach the real platform API; false for the simulated adapter. */
+  readonly live: boolean;
   /** Minimum daily budget accepted by the platform, in VND */
   readonly minDailyBudget: number;
 

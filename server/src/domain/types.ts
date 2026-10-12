@@ -18,6 +18,8 @@ export interface Integration {
   accountId?: string;
   accountName?: string;
   connectedAt?: string;
+  /** Whether the account was authorised against the real platform API (absent = simulated). */
+  live?: boolean;
 }
 
 export interface Campaign {

@@ -23,6 +23,7 @@ export interface MockPlatformProfile {
 export class MockAdPlatformAdapter implements IAdPlatformAdapter {
   readonly platform: Platform;
   readonly displayName: string;
+  readonly live = false;
   readonly minDailyBudget: number;
 
   constructor(
