@@ -145,3 +145,16 @@ const DAY_OPTIONS = DATE_RANGE_OPTIONS.map((days) => ({ value: days, label: `${d
 export function DateRangePicker({ days, onChange }: { days: DateRangeDays; onChange: (days: DateRangeDays) => void }) {
   return <Segmented label="Khoảng thời gian" value={days} options={DAY_OPTIONS} onChange={onChange} />;
 }
+
+/** Every figure in this build is seeded sample data, not real ad accounts; say so on every screen. */
+export function SampleDataBanner() {
+  return (
+    <div
+      role="note"
+      className="border-b border-caution/20 bg-caution-soft px-4 py-2 text-center text-xs font-medium text-caution"
+    >
+      <span className="font-bold tracking-wide">DỮ LIỆU MINH HỌA</span> — số liệu, chiến dịch và tài khoản quảng cáo
+      trên trang này là dữ liệu mẫu, không phải dữ liệu thật.
+    </div>
+  );
+}
