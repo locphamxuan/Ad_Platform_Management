@@ -27,26 +27,26 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_KEY = 'adhub.token';
+/**
+ * The session lives in an httpOnly cookie the page cannot read. Its companion CSRF cookie is
+ * readable: echoing it in X-CSRF-Token proves the request comes from this site.
+ */
+const CSRF_COOKIE = 'adhub_csrf';
 
-/** Storage can throw (private mode, blocked cookies); the app then works per tab only. */
-export const tokenStore = {
-  get: () => {
-    try {
-      return localStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
-  },
-  set: (token: string | null) => {
-    try {
-      if (token) localStorage.setItem(TOKEN_KEY, token);
-      else localStorage.removeItem(TOKEN_KEY);
-    } catch {
-      // ignore: see above
-    }
-  },
-};
+function csrfToken(): string | null {
+  const match = document.cookie.split('; ').find((part) => part.startsWith(`${CSRF_COOKIE}=`));
+  return match ? decodeURIComponent(match.slice(CSRF_COOKIE.length + 1)) : null;
+}
+
+/** Cheap hint used on startup: without the CSRF cookie there is no session worth checking. */
+export const hasSessionCookie = () => csrfToken() !== null;
+
+// Sessions used to be kept in localStorage; drop any leftover token.
+try {
+  localStorage.removeItem('adhub.token');
+} catch {
+  // storage blocked: nothing to clean up
+}
 
 let onUnauthorized: () => void = () => {};
 /** Lets the auth layer react when the server says the session is gone. */
@@ -55,18 +55,19 @@ export const setUnauthorizedHandler = (handler: () => void) => {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = tokenStore.get();
+  const csrf = csrfToken();
   const response = await fetch(`/api${path}`, {
     ...init,
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
+      ...(csrf && { 'X-CSRF-Token': csrf }),
     },
   });
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && token) onUnauthorized();
+    if (response.status === 401 && csrf) onUnauthorized();
     throw new ApiError(body.code ?? 'HTTP_ERROR', body.message ?? response.statusText, response.status);
   }
   return body as T;
@@ -91,7 +92,7 @@ interface DateRange {
 export const api = {
   auth: {
     login: (email: string, password: string) =>
-      post<{ token: string; user: AuthUser }>('/auth/login', { email, password }),
+      post<{ user: AuthUser }>('/auth/login', { email, password }),
     me: () => request<AuthUser>('/auth/me'),
     logout: () => post<void>('/auth/logout'),
   },

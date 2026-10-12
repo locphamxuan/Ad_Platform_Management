@@ -3,8 +3,16 @@ import { z } from 'zod';
 import type { Container } from '../container.js';
 import { allocateBudget } from '../domain/budget.js';
 import { assertDailyBudgetAllowed, assertRuleActionAllowed } from '../domain/permissions.js';
-import { authenticate, bearerToken, currentUser, requirePermission } from '../middleware/auth.js';
+import { UnauthorizedError } from '../domain/errors.js';
+import { authenticate, currentUser, requirePermission, sessionToken } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/error-handler.js';
+import {
+  clearSessionCookies,
+  clientIp,
+  csrfProtection,
+  LoginLimiter,
+  setSessionCookies,
+} from '../middleware/security.js';
 import { userActor } from '../services/activity.service.js';
 import { toAuthProfile } from '../services/auth.service.js';
 import {
@@ -24,13 +32,22 @@ const idParam = z.object({ id: z.string().min(1) });
 const platformParam = z.object({ platform: platformSchema });
 
 /** Thin HTTP layer: authenticate, check the role's permission, validate input, delegate to services. */
-export function createApiRouter(c: Container): Router {
+export function createApiRouter(c: Container, loginLimiter = new LoginLimiter()): Router {
   const router = Router();
+  router.use(csrfProtection);
 
   router.post('/auth/login', asyncHandler(async (req, res) => {
     const { email, password } = loginSchema.parse(req.body);
-    const { token, user } = await c.auth.login(email, password);
-    res.json({ token, user: toAuthProfile(user, await c.settings.budgetLimitFor(user.role)) });
+    const ip = clientIp(req);
+    loginLimiter.assertAllowed(ip, email);
+    const session = await c.auth.login(email, password).catch((error: unknown) => {
+      if (error instanceof UnauthorizedError) loginLimiter.recordFailure(ip, email);
+      throw error;
+    });
+    loginLimiter.recordSuccess(ip, email);
+    setSessionCookies(req, res, session.token);
+    // The token is also returned for non-browser API clients; the web app relies on the cookie only.
+    res.json({ token: session.token, user: toAuthProfile(session.user, await c.settings.budgetLimitFor(session.user.role)) });
   }));
 
   // Every route below requires a valid session.
@@ -41,7 +58,8 @@ export function createApiRouter(c: Container): Router {
     res.json(toAuthProfile(user, await c.settings.budgetLimitFor(user.role)));
   }));
   router.post('/auth/logout', asyncHandler(async (req, res) => {
-    await c.auth.logout(bearerToken(req) ?? '');
+    await c.auth.logout(sessionToken(req) ?? '');
+    clearSessionCookies(res);
     res.status(204).end();
   }));
 

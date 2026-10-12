@@ -1,6 +1,6 @@
 import type { ErrorRequestHandler, NextFunction, Request, RequestHandler, Response } from 'express';
 import { ZodError } from 'zod';
-import { AppError } from '../domain/errors.js';
+import { AppError, TooManyRequestsError } from '../domain/errors.js';
 
 /**
  * Forwards async errors to the error handler (Express 4 does not do this itself).
@@ -21,6 +21,7 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     return;
   }
   if (error instanceof AppError) {
+    if (error instanceof TooManyRequestsError) res.setHeader('Retry-After', String(error.retryAfterSeconds));
     res.status(error.httpStatus).json({ code: error.code, message: error.message });
     return;
   }

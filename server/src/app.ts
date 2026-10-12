@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import type { Container } from './container.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { securityHeaders } from './middleware/security.js';
 import { createApiRouter } from './routes/index.js';
 
 export type AppOptions = {
@@ -21,6 +22,7 @@ export function createApp(container: Container, options: AppOptions = {}) {
     }
     next();
   });
+  app.use(securityHeaders);
   app.use(cors());
   app.use(express.json());
   app.get('/health', (_req, res) => {

@@ -132,6 +132,120 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     });
   });
 
+  describe('browser session security', () => {
+    async function browserLogin(email: string) {
+      const response = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: DEMO_PASSWORD }),
+      });
+      const cookies = response.headers.getSetCookie();
+      const value = (name: string) => cookies.find((c) => c.startsWith(`${name}=`))!.split(';')[0].split('=')[1];
+      return { cookies, session: value('adhub_session'), csrf: value('adhub_csrf') };
+    }
+    const cookieCall = (path: string, cookie: string, init: { method?: string; headers?: Record<string, string> } = {}) =>
+      fetch(`${baseUrl}/api${path}`, {
+        method: init.method ?? 'GET',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie, ...init.headers },
+        body: init.method && init.method !== 'GET' ? JSON.stringify({ status: 'PAUSED' }) : undefined,
+      });
+
+    it('keeps the session in an httpOnly, SameSite=Strict cookie', async () => {
+      const { cookies } = await browserLogin('admin@adhub.vn');
+      const session = cookies.find((c) => c.startsWith('adhub_session='))!;
+      expect(session).toMatch(/HttpOnly/i);
+      expect(session).toMatch(/SameSite=Strict/i);
+      expect(cookies.find((c) => c.startsWith('adhub_csrf='))).not.toMatch(/HttpOnly/i);
+    });
+
+    it('accepts reads with the cookie but requires the CSRF token for changes', async () => {
+      const { session, csrf } = await browserLogin('admin@adhub.vn');
+      const cookie = `adhub_session=${session}; adhub_csrf=${csrf}`;
+      expect((await cookieCall('/auth/me', cookie)).status).toBe(200);
+
+      const [campaign] = (await call('/campaigns?platform=tiktok', { token: tokens.admin })).body;
+      const path = `/campaigns/${campaign.id}`;
+      expect((await cookieCall(path, cookie, { method: 'PATCH' })).status).toBe(403);
+      expect((await cookieCall(path, cookie, { method: 'PATCH', headers: { 'X-CSRF-Token': 'guess' } })).status).toBe(403);
+      expect((await cookieCall(path, cookie, { method: 'PATCH', headers: { 'X-CSRF-Token': csrf } })).status).toBe(200);
+    });
+
+    it('refuses state changes coming from another site', async () => {
+      const { session, csrf } = await browserLogin('admin@adhub.vn');
+      const cookie = `adhub_session=${session}; adhub_csrf=${csrf}`;
+      const foreign = await cookieCall('/rules/x/run', cookie, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': csrf, Origin: 'https://evil.example' },
+      });
+      expect(foreign.status).toBe(403);
+    });
+
+    it('clears the cookies and the session on logout', async () => {
+      const { session, csrf } = await browserLogin('buyer@adhub.vn');
+      const cookie = `adhub_session=${session}; adhub_csrf=${csrf}`;
+      const logout = await cookieCall('/auth/logout', cookie, { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
+      expect(logout.status).toBe(204);
+      expect(logout.headers.getSetCookie().some((c) => c.startsWith('adhub_session=;'))).toBe(true);
+      expect((await cookieCall('/auth/me', cookie)).status).toBe(401);
+    });
+
+    it('locks out repeated wrong passwords from one visitor', async () => {
+      const attempt = (password: string) =>
+        fetch(`${baseUrl}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '198.51.100.9', 'X-Forwarded-Proto': 'https' },
+          body: JSON.stringify({ email: 'attacker-target@adhub.vn', password }),
+        });
+      for (let i = 0; i < 5; i++) expect((await attempt('wrong')).status).toBe(401);
+      const blocked = await attempt('wrong');
+      expect(blocked.status).toBe(429);
+      expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+    });
+
+    it('sends basic security headers', async () => {
+      const response = await fetch(`${baseUrl}/health`);
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(response.headers.get('x-frame-options')).toBe('DENY');
+    });
+  });
+
+  describe('real vs simulated platform connections', () => {
+    it('reports simulated platforms as not live', async () => {
+      const integrations = (await call('/integrations', { token: tokens.admin })).body as { platform: string; live: boolean }[];
+      expect(integrations.every((i) => i.live === false)).toBe(true);
+    });
+
+    it('requires reconnecting Facebook once real Meta credentials are configured', async () => {
+      const meta = {
+        accessToken: 'test-token-not-used-0000',
+        appSecret: 'test-secret-not-used',
+        adAccountId: 'act_1',
+        pageId: '1',
+        apiVersion: 'v23.0',
+      };
+      const liveServer = createApp(createContainer(client.db(DB_NAME), meta)).listen(0);
+      await new Promise((resolve) => liveServer.once('listening', resolve));
+      const liveUrl = `http://127.0.0.1:${(liveServer.address() as AddressInfo).port}/api`;
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` };
+      try {
+        const integrations = await (await fetch(`${liveUrl}/integrations`, { headers })).json();
+        expect(integrations.find((i: { platform: string }) => i.platform === 'facebook')).toMatchObject({
+          connected: false,
+          live: true,
+        });
+        const [campaign] = (await call('/campaigns?platform=facebook', { token: tokens.admin })).body;
+        const patch = await fetch(`${liveUrl}/campaigns/${campaign.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ status: campaign.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' }),
+        });
+        expect(patch.status).toBe(409);
+      } finally {
+        await new Promise((resolve) => liveServer.close(resolve));
+      }
+    });
+  });
+
   describe('workspace budget limit', () => {
     const LIMIT = 10_000_000;
     const setLimit = (buyerDailyBudgetLimit: number | null, token = tokens.owner) =>
