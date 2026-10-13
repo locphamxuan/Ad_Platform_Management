@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { RequireAuth, RequirePermission } from './components/guards';
 import { Layout } from './components/Layout';
 import { Loading } from './components/ui';
+import { AccountPage } from './features/account/AccountPage';
 import { ActivityPage } from './features/activity/ActivityPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { CampaignsPage } from './features/campaigns/CampaignsPage';
@@ -51,6 +52,7 @@ export function App() {
         <Route path="integrations" element={guard('integration:view', <IntegrationsPage />)} />
         <Route path="activity" element={guard('activity:view', <ActivityPage />)} />
         <Route path="users" element={guard('user:manage', <UsersPage />)} />
+        <Route path="account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

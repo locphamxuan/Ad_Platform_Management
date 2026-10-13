@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, hasSessionCookie, setUnauthorizedHandler } from './api';
-import type { AuthUser, Permission } from './types';
+import type { AuthUser, Permission, ProfileChanges } from './types';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -9,6 +9,8 @@ interface AuthContextValue {
   restoring: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Saves the signed-in user's own name/email and refreshes the profile shown everywhere */
+  updateProfile: (changes: ProfileChanges) => Promise<void>;
   can: (permission: Permission) => boolean;
 }
 
@@ -47,6 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout: async () => {
         await api.auth.logout().catch(() => undefined);
         clearSession();
+      },
+      updateProfile: async (changes) => {
+        setUser(await api.auth.updateProfile(changes));
       },
       can: (permission) => user?.permissions.includes(permission) ?? false,
     }),

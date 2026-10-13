@@ -83,13 +83,23 @@ export function Layout() {
             <p className="mt-0.5 truncate text-xs text-white/50">
               {ROLE_META[user.role].label} · {user.email}
             </p>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="mt-3 text-xs font-medium text-white/60 underline-offset-4 hover:text-white hover:underline"
-            >
-              Đăng xuất
-            </button>
+            <div className="mt-3 flex gap-4">
+              <NavLink
+                to="/account"
+                className={({ isActive }) =>
+                  `text-xs font-medium underline-offset-4 hover:text-white hover:underline ${isActive ? 'text-white' : 'text-white/60'}`
+                }
+              >
+                Thông tin cá nhân
+              </NavLink>
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="text-xs font-medium text-white/60 underline-offset-4 hover:text-white hover:underline"
+              >
+                Đăng xuất
+              </button>
+            </div>
           </div>
         )}
       </aside>

@@ -10,6 +10,7 @@ import type {
   NewUser,
   Platform,
   PlatformPublishResult,
+  ProfileChanges,
   Role,
   Rule,
   RuleRunResult,
@@ -94,6 +95,9 @@ export const api = {
     login: (email: string, password: string) =>
       post<{ user: AuthUser }>('/auth/login', { email, password }),
     me: () => request<AuthUser>('/auth/me'),
+    updateProfile: (changes: ProfileChanges) => patch<AuthUser>('/auth/me', changes),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      post<void>('/auth/me/password', { currentPassword, newPassword }),
     logout: () => post<void>('/auth/logout'),
   },
   users: {

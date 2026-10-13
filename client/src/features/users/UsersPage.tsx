@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { ErrorMessage, Field, Loading, PageHeader, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -97,6 +98,11 @@ export function UsersPage() {
                           </p>
                         </td>
                         <td className="table-cell text-right">
+                          {isMe && (
+                            <Link to="/account" className="btn-secondary btn-sm">
+                              Sửa thông tin
+                            </Link>
+                          )}
                           {editable && (
                             <button
                               type="button"
