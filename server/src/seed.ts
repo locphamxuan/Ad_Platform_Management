@@ -58,7 +58,6 @@ export type SeedPasswords = Partial<Record<Role, string>>;
 
 export const DEMO_USERS: { email: string; name: string; role: Role }[] = [
   { email: 'owner@adhub.vn', name: 'Nguyễn Minh Chủ', role: 'owner' },
-  { email: 'admin@adhub.vn', name: 'Trần Quản Trị', role: 'admin' },
   { email: 'buyer@adhub.vn', name: 'Lê Media Buyer', role: 'media_buyer' },
   { email: 'client@adhub.vn', name: 'Bosa Fashion (Khách hàng)', role: 'client' },
 ];

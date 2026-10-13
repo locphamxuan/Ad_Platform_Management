@@ -60,7 +60,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     await new Promise((resolve) => server.once('listening', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-    for (const role of ['owner', 'admin', 'buyer', 'client']) {
+    for (const role of ['owner', 'buyer', 'client']) {
       tokens[role] = (await login(`${role}@adhub.vn`)).body.token;
     }
   });
@@ -122,7 +122,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       });
       expect(patch.status).toBe(200);
 
-      const [latest] = (await call('/activity?limit=1', { token: tokens.admin })).body;
+      const [latest] = (await call('/activity?limit=1', { token: tokens.owner })).body;
       expect(latest).toMatchObject({ actor: 'user', actorName: 'Lê Media Buyer' });
     });
 
@@ -151,7 +151,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       });
 
     it('keeps the session in an httpOnly, SameSite=Strict cookie', async () => {
-      const { cookies } = await browserLogin('admin@adhub.vn');
+      const { cookies } = await browserLogin('owner@adhub.vn');
       const session = cookies.find((c) => c.startsWith('adhub_session='))!;
       expect(session).toMatch(/HttpOnly/i);
       expect(session).toMatch(/SameSite=Strict/i);
@@ -159,11 +159,11 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     });
 
     it('accepts reads with the cookie but requires the CSRF token for changes', async () => {
-      const { session, csrf } = await browserLogin('admin@adhub.vn');
+      const { session, csrf } = await browserLogin('owner@adhub.vn');
       const cookie = `adhub_session=${session}; adhub_csrf=${csrf}`;
       expect((await cookieCall('/auth/me', cookie)).status).toBe(200);
 
-      const [campaign] = (await call('/campaigns?platform=tiktok', { token: tokens.admin })).body;
+      const [campaign] = (await call('/campaigns?platform=tiktok', { token: tokens.owner })).body;
       const path = `/campaigns/${campaign.id}`;
       expect((await cookieCall(path, cookie, { method: 'PATCH' })).status).toBe(403);
       expect((await cookieCall(path, cookie, { method: 'PATCH', headers: { 'X-CSRF-Token': 'guess' } })).status).toBe(403);
@@ -171,7 +171,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     });
 
     it('refuses state changes coming from another site', async () => {
-      const { session, csrf } = await browserLogin('admin@adhub.vn');
+      const { session, csrf } = await browserLogin('owner@adhub.vn');
       const cookie = `adhub_session=${session}; adhub_csrf=${csrf}`;
       const foreign = await cookieCall('/rules/x/run', cookie, {
         method: 'POST',
@@ -211,7 +211,7 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
 
   describe('real vs simulated platform connections', () => {
     it('reports simulated platforms as not live', async () => {
-      const integrations = (await call('/integrations', { token: tokens.admin })).body as { platform: string; live: boolean }[];
+      const integrations = (await call('/integrations', { token: tokens.owner })).body as { platform: string; live: boolean }[];
       expect(integrations.every((i) => i.live === false)).toBe(true);
     });
 
@@ -226,14 +226,14 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       const liveServer = createApp(createContainer(client.db(DB_NAME), { meta })).listen(0);
       await new Promise((resolve) => liveServer.once('listening', resolve));
       const liveUrl = `http://127.0.0.1:${(liveServer.address() as AddressInfo).port}/api`;
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` };
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.owner}` };
       try {
         const integrations = await (await fetch(`${liveUrl}/integrations`, { headers })).json();
         expect(integrations.find((i: { platform: string }) => i.platform === 'facebook')).toMatchObject({
           connected: false,
           live: true,
         });
-        const [campaign] = (await call('/campaigns?platform=facebook', { token: tokens.admin })).body;
+        const [campaign] = (await call('/campaigns?platform=facebook', { token: tokens.owner })).body;
         const patch = await fetch(`${liveUrl}/campaigns/${campaign.id}`, {
           method: 'PATCH',
           headers,
@@ -276,17 +276,17 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     });
 
     it('lets only the owner change the limit, and logs it', async () => {
-      expect((await setLimit(LIMIT, tokens.admin)).status).toBe(403);
+      expect((await setLimit(LIMIT, tokens.buyer)).status).toBe(403);
       expect((await setLimit(LIMIT)).body).toMatchObject({ buyerDailyBudgetLimit: LIMIT });
-      const [latest] = (await call('/activity?limit=1', { token: tokens.admin })).body;
+      const [latest] = (await call('/activity?limit=1', { token: tokens.owner })).body;
       expect(latest.message).toContain('không giới hạn');
       expect((await call('/auth/me', { token: tokens.buyer })).body.dailyBudgetLimit).toBe(LIMIT);
-      expect((await call('/auth/me', { token: tokens.admin })).body.dailyBudgetLimit).toBeNull();
+      expect((await call('/auth/me', { token: tokens.owner })).body.dailyBudgetLimit).toBeNull();
     });
 
     it('requires budget approval above the limit once it is set', async () => {
       expect((await setBudget(LIMIT + 1_000_000, tokens.buyer)).status).toBe(403);
-      expect((await setBudget(LIMIT + 1_000_000, tokens.admin)).status).toBe(200);
+      expect((await setBudget(LIMIT + 1_000_000, tokens.owner)).status).toBe(200);
     });
 
     it('checks the limit per channel when creating a multi-channel campaign', async () => {
@@ -296,13 +296,13 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect((await create(LIMIT * 3)).status).toBe(403);
     });
 
-    it('reserves automated budget increases for admins while capped', async () => {
+    it('reserves automated budget increases for owners while capped', async () => {
       expect((await call('/rules', { method: 'POST', token: tokens.buyer, body: scaleRule })).status).toBe(403);
       const draft = await call('/rules', { method: 'POST', token: tokens.buyer, body: { ...scaleRule, enabled: false } });
       expect(draft.status).toBe(201);
       const enable = { method: 'PATCH', body: { enabled: true } };
       expect((await call(`/rules/${draft.body.id}`, { ...enable, token: tokens.buyer })).status).toBe(403);
-      expect((await call(`/rules/${draft.body.id}`, { ...enable, token: tokens.admin })).status).toBe(200);
+      expect((await call(`/rules/${draft.body.id}`, { ...enable, token: tokens.owner })).status).toBe(200);
     });
 
     it('lifts the cap again when the owner switches it off', async () => {
@@ -317,36 +317,25 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
   });
 
   describe('user management', () => {
-    it('lets admins add lower roles but not owners', async () => {
-      const buyer = await call('/users', {
-        method: 'POST',
-        token: tokens.admin,
-        body: { email: 'new.buyer@adhub.vn', name: 'Buyer Mới', role: 'media_buyer', password: 'password123' },
-      });
-      expect(buyer.status).toBe(201);
-      expect(buyer.body).not.toHaveProperty('passwordHash');
-
-      const owner = await call('/users', {
-        method: 'POST',
-        token: tokens.admin,
-        body: { email: 'new.owner@adhub.vn', name: 'Owner Mới', role: 'owner', password: 'password123' },
-      });
-      expect(owner.status).toBe(403);
+    it('lets owners add every role, including other owners', async () => {
+      for (const role of ['owner', 'media_buyer', 'client']) {
+        const created = await call('/users', {
+          method: 'POST',
+          token: tokens.owner,
+          body: { email: `new.${role}@adhub.vn`, name: 'Thành viên mới', role, password: 'password123' },
+        });
+        expect(created.status).toBe(201);
+        expect(created.body).not.toHaveProperty('passwordHash');
+      }
     });
 
-    it('reserves appointing admins for owners', async () => {
-      const admin = { name: 'Admin Mới', role: 'admin', password: 'password123' };
-      const byAdmin = await call('/users', { method: 'POST', token: tokens.admin, body: { ...admin, email: 'a1@adhub.vn' } });
-      const byOwner = await call('/users', { method: 'POST', token: tokens.owner, body: { ...admin, email: 'a2@adhub.vn' } });
-      expect(byAdmin.status).toBe(403);
-      expect(byOwner.status).toBe(201);
-
-      const [owner, adminMe] = await Promise.all([
-        call('/auth/me', { token: tokens.owner }),
-        call('/auth/me', { token: tokens.admin }),
-      ]);
-      expect(owner.body.permissions).toContain('workspace:manage');
-      expect(adminMe.body.permissions).not.toContain('workspace:manage');
+    it('rejects the retired admin role', async () => {
+      const admin = await call('/users', {
+        method: 'POST',
+        token: tokens.owner,
+        body: { email: 'new.admin@adhub.vn', name: 'Admin Mới', role: 'admin', password: 'password123' },
+      });
+      expect(admin.status).toBe(400);
     });
 
     it('rejects duplicate emails', async () => {
@@ -367,18 +356,22 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     it('revokes sessions of a deactivated user immediately', async () => {
       const users = (await call('/users', { token: tokens.owner })).body as { id: string; email: string }[];
       const client = users.find((u) => u.email === 'client@adhub.vn')!;
-      const result = await call(`/users/${client.id}`, { method: 'PATCH', token: tokens.admin, body: { active: false } });
+      const result = await call(`/users/${client.id}`, { method: 'PATCH', token: tokens.owner, body: { active: false } });
       expect(result.status).toBe(200);
       expect((await call('/dashboard', { token: tokens.client })).status).toBe(401);
       expect((await login('client@adhub.vn')).status).toBe(401);
     });
 
-    it('moves accounts with the retired viewer role to client on connect', async () => {
+    it('moves accounts with retired roles to their replacement on connect', async () => {
       const users = client.db(DB_NAME).collection('users');
-      await users.insertOne({ id: 'legacy-viewer', email: 'legacy.viewer@adhub.vn', name: 'Legacy', role: 'viewer' });
+      await users.insertMany([
+        { id: 'legacy-viewer', email: 'legacy.viewer@adhub.vn', name: 'Legacy', role: 'viewer' },
+        { id: 'legacy-admin', email: 'legacy.admin@adhub.vn', name: 'Legacy', role: 'admin' },
+      ]);
       const reconnect = await connectMongo(MONGODB_URI, DB_NAME);
       await reconnect.client.close();
       expect((await users.findOne({ id: 'legacy-viewer' }))?.role).toBe('client');
+      expect((await users.findOne({ id: 'legacy-admin' }))?.role).toBe('owner');
     });
   });
 });

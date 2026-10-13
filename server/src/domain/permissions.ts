@@ -14,7 +14,7 @@ export const PERMISSIONS = [
   /** Set a campaign daily budget above the workspace's buyer limit */
   'budget:approve',
   'user:manage',
-  /** Workspace governance: appoint or remove owners and admins */
+  /** Workspace settings such as the media buyer budget limit */
   'workspace:manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -22,13 +22,12 @@ export type Permission = (typeof PERMISSIONS)[number];
 /**
  * What each level adds on top of the level below it, so the ladder is strictly nested:
  * Client reads reports → Media Buyer runs campaigns within a budget limit →
- * Admin runs the workspace (integrations, team, large budgets) → Owner governs it.
+ * Owner runs the workspace (integrations, team, large budgets, settings).
  */
 const GRANTS_BY_LEVEL: Record<Role, readonly Permission[]> = {
   client: ['report:view'],
   media_buyer: ['campaign:view', 'campaign:manage', 'rule:view', 'rule:manage', 'integration:view', 'activity:view'],
-  admin: ['integration:manage', 'budget:approve', 'user:manage'],
-  owner: ['workspace:manage'],
+  owner: ['integration:manage', 'budget:approve', 'user:manage', 'workspace:manage'],
 };
 
 /** A role's own grants plus everything granted to the levels below it. */
@@ -37,14 +36,12 @@ const inheritedGrants = (role: Role): readonly Permission[] =>
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: inheritedGrants('owner'),
-  admin: inheritedGrants('admin'),
   media_buyer: inheritedGrants('media_buyer'),
   client: inheritedGrants('client'),
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
   owner: 'Chủ sở hữu',
-  admin: 'Quản trị viên',
   media_buyer: 'Media Buyer',
   client: 'Khách hàng',
 };
@@ -63,7 +60,7 @@ export const dailyBudgetLimit = (role: Role, buyerLimit: number | null): number 
 export function assertDailyBudgetAllowed(role: Role, limit: number | null, dailyBudget: number): void {
   if (limit !== null && dailyBudget > limit) {
     throw new ForbiddenError(
-      `${ROLE_LABELS[role]} chỉ được đặt tối đa ${formatVnd(limit)}/ngày cho một chiến dịch; mức cao hơn cần Quản trị viên duyệt`,
+      `${ROLE_LABELS[role]} chỉ được đặt tối đa ${formatVnd(limit)}/ngày cho một chiến dịch; mức cao hơn cần Chủ sở hữu duyệt`,
     );
   }
 }
@@ -75,9 +72,7 @@ export function assertRuleActionAllowed(role: Role, limit: number | null, action
   }
 }
 
-/** Workspace governors manage everyone; other user managers only manage roles below their own. */
+/** User managers manage every role except one above their own. */
 export function canManageRole(actorRole: Role, targetRole: Role): boolean {
-  if (!hasPermission(actorRole, 'user:manage')) return false;
-  if (hasPermission(actorRole, 'workspace:manage')) return true;
-  return ROLES.indexOf(targetRole) > ROLES.indexOf(actorRole);
+  return hasPermission(actorRole, 'user:manage') && ROLES.indexOf(targetRole) >= ROLES.indexOf(actorRole);
 }

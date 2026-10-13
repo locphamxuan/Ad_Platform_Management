@@ -24,8 +24,8 @@ describe('hasPermission', () => {
     }
   });
 
-  it('separates admin from owner: operations yes, workspace governance no', () => {
-    expect(PERMISSIONS.filter((p) => !hasPermission('admin', p))).toEqual(['workspace:manage']);
+  it('has exactly three roles now that admin is merged into owner', () => {
+    expect(ROLES).toEqual(['owner', 'media_buyer', 'client']);
   });
 
   it('lets media buyers operate campaigns and rules but not integrations, users or large budgets', () => {
@@ -48,7 +48,6 @@ describe('budget limits', () => {
   it('caps only roles without budget approval, and only when the workspace sets a limit', () => {
     expect(dailyBudgetLimit('media_buyer', LIMIT)).toBe(LIMIT);
     expect(dailyBudgetLimit('media_buyer', null)).toBeNull();
-    expect(dailyBudgetLimit('admin', LIMIT)).toBeNull();
     expect(dailyBudgetLimit('owner', LIMIT)).toBeNull();
   });
 
@@ -68,13 +67,6 @@ describe('budget limits', () => {
 describe('canManageRole', () => {
   it('lets owners manage every role', () => {
     for (const role of ROLES) expect(canManageRole('owner', role)).toBe(true);
-  });
-
-  it('lets admins manage only roles below admin', () => {
-    expect(canManageRole('admin', 'owner')).toBe(false);
-    expect(canManageRole('admin', 'admin')).toBe(false);
-    expect(canManageRole('admin', 'media_buyer')).toBe(true);
-    expect(canManageRole('admin', 'client')).toBe(true);
   });
 
   it('denies roles without user management', () => {

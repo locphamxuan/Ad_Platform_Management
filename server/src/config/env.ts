@@ -10,7 +10,6 @@ const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blankAsUnse
 const seedPassword = optional(z.string().min(12, 'SEED_PASSWORD_* must be at least 12 characters'));
 const SEED_PASSWORD_KEYS = {
   owner: 'SEED_PASSWORD_OWNER',
-  admin: 'SEED_PASSWORD_ADMIN',
   media_buyer: 'SEED_PASSWORD_MEDIA_BUYER',
   client: 'SEED_PASSWORD_CLIENT',
 } as const satisfies Record<Role, string>;
@@ -24,7 +23,6 @@ const envSchema = z
     /** Built client (client/dist) to serve from the API port; unset in development (Vite serves it). */
     CLIENT_DIST: optional(z.string().trim().min(1)),
     SEED_PASSWORD_OWNER: seedPassword,
-    SEED_PASSWORD_ADMIN: seedPassword,
     SEED_PASSWORD_MEDIA_BUYER: seedPassword,
     SEED_PASSWORD_CLIENT: seedPassword,
   })
