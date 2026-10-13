@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { AdPreview } from '../../components/AdPreview';
 import { Icon, type IconName } from '../../components/icons';
 import {
   AiBadge,
@@ -24,10 +23,11 @@ import { formatCompactVnd, formatDate, formatDateTime, formatDecimal, formatNumb
 import { percentChange, recommend, typicalCpa, type Recommendation } from '../../lib/insights';
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import { useChartColors } from '../../lib/theme';
-import type { AdAccountOption, Campaign, CampaignDetail, CampaignStatus, Kpis } from '../../lib/types';
+import type { AdAccountOption, Campaign, CampaignDetail, CampaignStatus, CopyOptions, CopyResult, Kpis } from '../../lib/types';
 import { useDateRangeParam } from '../../lib/url-state';
 import { reviewCreative } from '../create-campaign/brief';
-import { AccountAdvisor } from './AccountAdvisor';
+import { AccountAdvisor, type AccountChoice } from './AccountAdvisor';
+import { AdStudio, type Launch } from './AdStudio';
 import { BudgetEditor } from './BudgetEditor';
 import { ctaAdvice, summarizeCampaign } from './campaign-insights';
 import { useApplyRecommendations } from './use-apply-recommendations';
@@ -106,24 +106,50 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
   const currentAccount = detail.advice.accounts.find((a) => a.current);
   const bestAccount = detail.advice.accounts.find((a) => a.recommended);
 
-  const [copied, setCopied] = useState<{ id: string; accountName: string } | null>(null);
+  const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
   const update = useMutation({
     mutationFn: (changes: { status?: CampaignStatus; dailyBudget?: number }) => api.campaigns.update(campaign.id, changes),
     onSuccess: () => invalidateCampaignViews(queryClient),
   });
   const applyRec = useApplyRecommendations();
-  const duplicate = useMutation({
-    mutationFn: (account: AdAccountOption) => api.campaigns.duplicate(campaign.id, account.id),
-    onSuccess: (copy, account) => {
-      setCopied({ id: copy.id, accountName: account.name });
+  // One request per target; each succeeds or fails on its own, like the bulk actions.
+  const copy = useMutation({
+    mutationFn: async (requests: CopyOptions[]): Promise<CopyOutcome> => {
+      const result: CopyOutcome = { done: [], errors: [] };
+      for (const request of requests) {
+        try {
+          result.done.push(await api.campaigns.copy(campaign.id, request));
+        } catch (error) {
+          const label = PLATFORM_META[request.platform ?? campaign.platform].label;
+          result.errors.push(`${label}: ${error instanceof Error ? error.message : 'Lỗi không xác định'}`);
+        }
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      setOutcome(result);
       return invalidateCampaignViews(queryClient);
     },
   });
-  const onDuplicate = (account: AdAccountOption) => {
-    const message = `Nhân bản "${campaign.name}" (cả nội dung, ngân sách ${formatVnd(campaign.dailyBudget)}/ngày) sang tài khoản "${account.name}"?\nBản sao ở trạng thái Tạm dừng để bạn duyệt; chiến dịch gốc giữ nguyên.`;
-    if (confirm(message)) duplicate.mutate(account);
+  const budget = `${formatVnd(campaign.dailyBudget)}/ngày`;
+  const onChoose = ({ platform, account, move }: AccountChoice) => {
+    const message = move
+      ? `Chuyển "${campaign.name}" sang tài khoản "${account.name}"?\n${
+          campaign.status === 'ACTIVE'
+            ? 'Bản mới ở tài khoản này chạy ngay với cùng nội dung và ngân sách, bản gốc được tạm dừng.'
+            : 'Bản mới được tạo ở trạng thái tạm dừng như bản gốc.'
+        }`
+      : platform === campaign.platform
+        ? `Nhân bản "${campaign.name}" (nội dung, ngân sách ${budget}) sang tài khoản "${account.name}"?\nBản sao tạm dừng để bạn duyệt; bản gốc giữ nguyên.`
+        : `Mở rộng "${campaign.name}" sang ${PLATFORM_META[platform].label}, tài khoản "${account.name}" (ngân sách ${budget})?\nChiến dịch mới tạm dừng để bạn duyệt.`;
+    if (confirm(message)) copy.mutate([{ accountId: account.id, platform, move }]);
   };
-  const busy = update.isPending || applyRec.isPending || duplicate.isPending;
+  const onLaunch = ({ creative, newCopy, platforms }: Launch) => {
+    const labels = platforms.map((p) => PLATFORM_META[p].label).join(', ');
+    const message = `Tạo ${platforms.length} chiến dịch trên ${labels}${newCopy ? ' với phương án nội dung mới' : ''}, ngân sách ${budget} mỗi nền tảng, ở tài khoản phù hợp nhất?\nTất cả tạm dừng để bạn duyệt.`;
+    if (confirm(message)) copy.mutate(platforms.map((platform) => ({ platform, creative: newCopy ? creative : undefined })));
+  };
+  const busy = update.isPending || applyRec.isPending || copy.isPending;
 
   return (
     <div className="space-y-6">
@@ -192,15 +218,16 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
         </div>
       </header>
 
-      <ErrorMessage error={update.error ?? applyRec.error ?? duplicate.error} />
-      {copied && (
-        <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-positive/25 bg-positive-soft px-4 py-3 text-sm text-positive animate-fade-up">
-          <Icon name="check" size={16} />
-          Đã nhân bản sang "{copied.accountName}" — bản sao đang tạm dừng chờ bạn duyệt.
-          <Link to={`/campaigns/${copied.id}`} className="ml-auto font-semibold underline-offset-2 hover:underline">
-            Mở bản sao →
+      <ErrorMessage error={update.error ?? applyRec.error ?? copy.error} />
+      {outcome && <CopyNotice outcome={outcome} onClose={() => setOutcome(null)} />}
+      {campaign.replacedBy && !outcome && (
+        <p role="status" className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/25 bg-accent-soft px-4 py-3 text-sm text-ink">
+          <Icon name="info" size={16} className="text-accent" />
+          Chiến dịch này đã được chuyển sang tài khoản khác và đang được giữ tạm dừng.
+          <Link to={`/campaigns/${campaign.replacedBy}`} className="font-semibold text-accent hover:underline">
+            Mở bản đang chạy →
           </Link>
-        </div>
+        </p>
       )}
 
       <KpiRow detail={detail} />
@@ -228,12 +255,7 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
             )}
           </section>
 
-          <AccountAdvisor
-            detail={detail}
-            canDuplicate={editable}
-            duplicating={duplicate.isPending ? (duplicate.variables?.id ?? null) : null}
-            onDuplicate={onDuplicate}
-          />
+          <AccountAdvisor detail={detail} canManage={editable} busy={busy} onChoose={onChoose} />
 
           <PerformanceChart detail={detail} />
 
@@ -270,7 +292,7 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
           )}
         </div>
 
-        <aside className="min-w-0 space-y-4 xl:sticky xl:top-24">
+        <aside className="min-w-0 space-y-4">
           <Suggestions
             campaign={campaign}
             recommendation={recommendation}
@@ -278,10 +300,17 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
             editable={editable}
             busy={busy}
             onApply={(rec) => applyRec.mutate([rec])}
-            onDuplicate={onDuplicate}
+            onMove={(account) => onChoose({ platform: campaign.platform, account, move: true })}
           />
           {campaign.creative ? (
-            <AdPreview creative={campaign.creative} platforms={[campaign.platform]} objective={campaign.objective} />
+            <AdStudio
+              campaign={campaign}
+              creative={campaign.creative}
+              platformOptions={detail.accountCounts.map((c) => c.platform)}
+              canLaunch={editable && campaign.connected}
+              busy={busy}
+              onLaunch={onLaunch}
+            />
           ) : (
             <EmptyState title="Chưa có nội dung để xem trước" icon="eye">
               Chiến dịch này được tạo ngoài AdHub nên chưa có nội dung lưu lại. Chiến dịch tạo từ AdHub luôn có bản xem trước.
@@ -444,6 +473,51 @@ function Siblings({ siblings }: { siblings: CampaignDetail['siblings'] }) {
   );
 }
 
+interface CopyOutcome {
+  done: CopyResult[];
+  errors: string[];
+}
+
+/** What the last move, duplicate or launch created, with a link to each new campaign. */
+function CopyNotice({ outcome, onClose }: { outcome: CopyOutcome; onClose: () => void }) {
+  const verb = (r: CopyResult) => (r.moved ? 'Đã chuyển' : 'Đã tạo');
+  return (
+    <div
+      role="status"
+      className={`animate-fade-up rounded-xl border px-4 py-3 text-sm ${
+        outcome.done.length ? 'border-positive/25 bg-positive-soft' : 'border-negative/25 bg-negative-soft'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <ul className="min-w-0 flex-1 space-y-1.5">
+          {outcome.done.map((r) => (
+            <li key={r.campaign.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-positive">
+              <Icon name="check" size={15} />
+              <PlatformTag platform={r.campaign.platform} compact />
+              <span>
+                {verb(r)} ở tài khoản <span className="font-semibold">"{r.account.name}"</span> —{' '}
+                {r.campaign.status === 'ACTIVE' ? 'đang chạy, bản gốc đã tạm dừng' : 'tạm dừng chờ bạn duyệt'}.
+              </span>
+              <Link to={`/campaigns/${r.campaign.id}`} className="font-semibold underline-offset-2 hover:underline">
+                Mở →
+              </Link>
+            </li>
+          ))}
+          {outcome.errors.map((e) => (
+            <li key={e} className="flex items-start gap-2 text-negative">
+              <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
+              {e}
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="text-xs font-medium text-muted hover:text-ink" onClick={onClose}>
+          Đóng
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface SuggestionItem {
   id: string;
   icon: IconName;
@@ -461,7 +535,7 @@ function Suggestions({
   editable,
   busy,
   onApply,
-  onDuplicate,
+  onMove,
 }: {
   campaign: Campaign;
   recommendation?: Recommendation;
@@ -469,7 +543,7 @@ function Suggestions({
   editable: boolean;
   busy: boolean;
   onApply: (rec: Recommendation) => void;
-  onDuplicate: (account: AdAccountOption) => void;
+  onMove: (account: AdAccountOption) => void;
 }) {
   const [open, setOpen] = useState(true);
   const items: SuggestionItem[] = [];
@@ -495,8 +569,8 @@ function Suggestions({
       title: `Chạy trên "${bestAccount.name}"`,
       body: `Điểm phù hợp ${bestAccount.fit.score}/100. ${bestAccount.fit.pros[0] ?? ''}`.trim(),
       action: editable && campaign.creative && (
-        <button type="button" className="btn-secondary btn-sm" disabled={busy || !campaign.connected} onClick={() => onDuplicate(bestAccount)}>
-          <Icon name="copy" size={14} /> Nhân bản sang đó
+        <button type="button" className="btn-secondary btn-sm" disabled={busy || !campaign.connected} onClick={() => onMove(bestAccount)}>
+          <Icon name="arrowRight" size={14} /> Chuyển sang đó
         </button>
       ),
     });

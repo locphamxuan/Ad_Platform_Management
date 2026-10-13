@@ -1,7 +1,8 @@
 import { CTA_BY_OBJECTIVE } from '../../components/AdPreview';
 import { formatDate, formatDecimal, formatPercent, formatVnd } from '../../lib/format';
 import { campaignHealth, percentChange, type Health } from '../../lib/insights';
-import type { AdAccountOption, CampaignDetail, DailyPoint, Objective } from '../../lib/types';
+import type { AdAccountOption, CampaignDetail, Creative, DailyPoint, Objective } from '../../lib/types';
+import { generateCreatives, parseBrief, reviewCreative } from '../create-campaign/brief';
 
 /** What the assistant says about one campaign; plain functions so they can be tested. */
 
@@ -92,6 +93,40 @@ export function describeOtherPlatform(
     tone: 'ai',
     text: `Nếu mở rộng sang ${platformLabel}, nên dùng "${best.name}" — điểm phù hợp ${best.fit.score}/100 trong ${accounts.length} tài khoản.`,
   };
+}
+
+export interface CopyVariant extends Creative {
+  angle: string;
+  score: number;
+}
+
+/** "[Demo] TT - Livestream ưu đãi" → "Livestream ưu đãi": the words that describe the offer. */
+const offerOf = (name: string) => name.replace(/^\s*\[[^\]]*\]\s*/, '').replace(/^\s*[A-Z]{2,3}\s*-\s*/, '').trim();
+
+/**
+ * Alternative ad copy for a running campaign, written by the same rules as the campaign creator,
+ * from its headline and then its name, so there are several angles to page through. Best-scoring
+ * first; the landing page is kept.
+ */
+export function suggestVariants(campaign: { name: string; objective: Objective; creative: Creative }): CopyVariant[] {
+  const { creative } = campaign;
+  const sources = [creative.headline, offerOf(campaign.name)];
+  const seen = new Set([`${creative.headline}|${creative.primaryText}`]);
+  const variants: CopyVariant[] = [];
+  for (const source of sources) {
+    const brief = parseBrief(source);
+    // "Livestream 20h – giảm 40%" leaves "Livestream 20h –" once the discount is taken out.
+    const product = brief.product.replace(/[\s–—:,.;|-]+$/u, '').trim();
+    if (!product) continue;
+    for (const v of generateCreatives({ ...brief, product, objective: campaign.objective })) {
+      const key = `${v.headline}|${v.primaryText}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const next = { headline: v.headline, primaryText: v.primaryText, landingUrl: creative.landingUrl };
+      variants.push({ ...next, angle: v.angle, score: reviewCreative(next).score });
+    }
+  }
+  return variants.sort((a, b) => b.score - a.score);
 }
 
 /** Advice on the call-to-action, as Ads Manager gives it next to the button picker. */

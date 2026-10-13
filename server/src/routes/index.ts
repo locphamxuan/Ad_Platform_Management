@@ -23,7 +23,7 @@ import {
   changePasswordSchema,
   createUserSchema,
   dateRangeSchema,
-  duplicateCampaignSchema,
+  copyCampaignSchema,
   loginSchema,
   platformSchema,
   ruleSchema,
@@ -133,14 +133,14 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     const { platform } = z.object({ platform: platformSchema }).parse(req.query);
     res.json(await c.campaigns.adviseOn(id, platform));
   }));
-  router.post('/campaigns/:id/duplicate', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+  router.post('/campaigns/:id/copy', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
-    const { accountId } = duplicateCampaignSchema.parse(req.body);
+    const options = copyCampaignSchema.parse(req.body);
     const user = currentUser(res);
     // The copy keeps the original budget, which must still be within this user's cap.
     const { dailyBudget } = await c.repositories.campaigns.getById(id);
     assertDailyBudgetAllowed(user.role, await c.settings.budgetLimitFor(user.role), dailyBudget);
-    res.status(201).json(await c.campaigns.duplicateToAccount(id, accountId, userActor(user)));
+    res.status(201).json(await c.campaigns.copy(id, options, userActor(user)));
   }));
   router.patch('/campaigns/:id', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);

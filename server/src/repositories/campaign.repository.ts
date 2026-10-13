@@ -33,7 +33,7 @@ export class CampaignRepository {
     return campaign;
   }
 
-  async update(id: string, changes: Partial<Pick<Campaign, 'status' | 'dailyBudget'>>): Promise<Campaign> {
+  async update(id: string, changes: Partial<Pick<Campaign, 'status' | 'dailyBudget' | 'unifiedCampaignId' | 'replacedBy'>>): Promise<Campaign> {
     const updated = await this.collection.findOneAndUpdate(
       { id },
       { $set: changes },

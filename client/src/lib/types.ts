@@ -94,6 +94,8 @@ export interface Campaign {
   creative?: Creative;
   /** Ad account the campaign runs in */
   accountId?: string;
+  /** Set once the campaign was moved to another account: the campaign that took over */
+  replacedBy?: string;
   createdAt: string;
   connected: boolean;
   kpis: Kpis;
@@ -141,6 +143,23 @@ export interface DailyPoint {
   clicks: number;
   conversions: number;
   revenue: number;
+}
+
+export interface CopyOptions {
+  /** Absent = the advisor's best account on the target platform */
+  accountId?: string;
+  /** Absent = the campaign's own platform */
+  platform?: Platform;
+  /** Absent = the campaign's own ad copy */
+  creative?: Creative;
+  /** Take over from the original: the copy keeps it running and the original pauses */
+  move?: boolean;
+}
+
+export interface CopyResult {
+  campaign: Campaign;
+  account: { id: string; name: string };
+  moved: boolean;
 }
 
 export interface CampaignDetail {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { brandFrom, placementsFor } from '../src/components/AdPreview';
-import { bestDay, ctaAdvice, describeAdvice, describeOtherPlatform, summarizeCampaign } from '../src/features/campaigns/campaign-insights';
+import { bestDay, ctaAdvice, describeAdvice, describeOtherPlatform, suggestVariants, summarizeCampaign } from '../src/features/campaigns/campaign-insights';
 import type { AdAccountOption, CampaignDetail, DailyPoint, Kpis } from '../src/lib/types';
 
 const kpis = (spend: number, revenue: number, conversions: number): Kpis => ({
@@ -103,6 +103,24 @@ describe('describeAdvice', () => {
     expect(describeOtherPlatform([best, option('t2')], 'TikTok')?.text).toBe(
       'Nếu mở rộng sang TikTok, nên dùng "TikTok chính" — điểm phù hợp 70/100 trong 2 tài khoản.',
     );
+  });
+});
+
+describe('suggestVariants', () => {
+  const campaign = {
+    name: '[Demo] TT - Livestream ưu đãi giờ vàng',
+    objective: 'sales' as const,
+    creative: { headline: 'Livestream 20h – giảm đến 40%', primaryText: 'Hẹn bạn 20h tối nay.', landingUrl: 'https://example.com/live' },
+  };
+
+  it('offers several new versions, best first, keeping the landing page', () => {
+    const variants = suggestVariants(campaign);
+    expect(variants.length).toBeGreaterThanOrEqual(3);
+    expect(variants.every((v) => v.landingUrl === 'https://example.com/live')).toBe(true);
+    expect(variants.some((v) => v.headline === campaign.creative.headline && v.primaryText === campaign.creative.primaryText)).toBe(false);
+    expect(variants.map((v) => v.score)).toEqual([...variants.map((v) => v.score)].sort((a, b) => b - a));
+    expect(new Set(variants.map((v) => v.headline + v.primaryText)).size).toBe(variants.length);
+    expect(variants.some((v) => /\[Demo\]|TT -/.test(v.headline))).toBe(false);
   });
 });
 

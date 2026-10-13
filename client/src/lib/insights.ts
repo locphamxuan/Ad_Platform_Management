@@ -91,7 +91,8 @@ export function recommend(campaigns: readonly Campaign[], options: RecommendOpti
   const accountCpa = typicalCpa(campaigns);
   const result: Recommendation[] = [];
   for (const c of campaigns) {
-    if (!c.connected) continue;
+    // A campaign moved to another account is retired; its replacement gets the advice instead.
+    if (!c.connected || c.replacedBy) continue;
     const rec = recommendFor(c, accountCpa, options);
     if (rec) result.push(rec);
   }
