@@ -12,6 +12,9 @@ export interface CreatePlatformCampaignResult {
   platformObjective: string;
 }
 
+/** Real platform campaign ids are numeric; demo campaigns carry mock ids such as "tt-1a2b". */
+export const isPlatformCampaignId = (externalId: string) => /^\d+$/.test(externalId);
+
 /**
  * Port every ad platform must implement. Real Meta/TikTok/Google adapters
  * replace the mocks without touching services.
@@ -29,5 +32,7 @@ export interface IAdPlatformAdapter {
   createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult>;
   updateStatus(externalId: string, status: CampaignStatus): Promise<void>;
   updateBudget(externalId: string, dailyBudget: number): Promise<void>;
+  /** Removes the campaign on the platform; demo campaigns that never existed there are skipped. */
+  deleteCampaign(externalId: string): Promise<void>;
   fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily>;
 }

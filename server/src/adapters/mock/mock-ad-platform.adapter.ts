@@ -57,6 +57,8 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
 
   async updateBudget(_externalId: string, _dailyBudget: number): Promise<void> {}
 
+  async deleteCampaign(_externalId: string): Promise<void> {}
+
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {
     return simulateDailyMetrics(this.profile, campaign.id, campaign.dailyBudget, date, this.random);
   }
