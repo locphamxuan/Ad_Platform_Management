@@ -4,19 +4,16 @@ import { Link } from 'react-router-dom';
 import { ErrorMessage, Field, PageHeader, PlatformTag, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { allocateBudget } from '../../lib/budget';
+import { allocateBudget, rebalance, splitEvenly } from '../../lib/budget';
 import { BUDGET_STEP, OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
 import { formatVnd } from '../../lib/format';
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import type { CreateUnifiedCampaignInput, Objective, Platform, PlatformPublishResult } from '../../lib/types';
 
-type Allocation = Record<Platform, { enabled: boolean; percent: number }>;
+/** Selected platforms and their share of the total; a platform is selected when it has a key. */
+type Shares = Partial<Record<Platform, number>>;
 
-const DEFAULT_ALLOCATION: Allocation = {
-  facebook: { enabled: true, percent: 40 },
-  tiktok: { enabled: true, percent: 30 },
-  google: { enabled: true, percent: 30 },
-};
+const BUDGET_PRESETS = [500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000];
 
 export function CreateCampaignPage() {
   const queryClient = useQueryClient();
@@ -25,7 +22,8 @@ export function CreateCampaignPage() {
   const [name, setName] = useState('');
   const [objective, setObjective] = useState<Objective>('sales');
   const [totalDailyBudget, setTotalDailyBudget] = useState(1_000_000);
-  const [allocation, setAllocation] = useState<Allocation>(DEFAULT_ALLOCATION);
+  // null = untouched: follow the default below, which waits for the integration list.
+  const [chosenShares, setShares] = useState<Shares | null>(null);
   const [creative, setCreative] = useState({ headline: '', primaryText: '', landingUrl: 'https://' });
 
   const create = useMutation({
@@ -33,17 +31,22 @@ export function CreateCampaignPage() {
     onSuccess: () => invalidateCampaignViews(queryClient),
   });
 
-  const selected = PLATFORMS.filter((p) => allocation[p].enabled);
-  const percentSum = selected.reduce((sum, p) => sum + allocation[p].percent, 0);
-  const budgets = new Map(
-    allocateBudget(
-      totalDailyBudget,
-      selected.map((platform) => ({ platform, percent: allocation[platform].percent })),
-    ).map((a) => [a.platform, a.dailyBudget]),
-  );
   const connected = new Set(integrations.data?.filter((i) => i.connected).map((i) => i.platform));
   const minBudget = new Map(integrations.data?.map((i) => [i.platform, i.minDailyBudget]));
   const limit = user?.dailyBudgetLimit ?? null;
+
+  // Start with every connected platform, split evenly, so most campaigns need no clicks here at all.
+  const connectedPlatforms = PLATFORMS.filter((p) => connected.has(p));
+  const shares = chosenShares ?? splitEvenly(connectedPlatforms.length > 0 ? connectedPlatforms : PLATFORMS);
+  const selected = PLATFORMS.filter((p) => shares[p] !== undefined);
+  const percentOf = (p: Platform) => shares[p] ?? 0;
+  const percentSum = selected.reduce((sum, p) => sum + percentOf(p), 0);
+  const budgets = new Map(
+    allocateBudget(
+      totalDailyBudget,
+      selected.map((platform) => ({ platform, percent: percentOf(platform) })),
+    ).map((a) => [a.platform, a.dailyBudget]),
+  );
 
   // The server rejects the whole request for these, so block them here with a clear reason.
   const allocationProblem =
@@ -51,15 +54,17 @@ export function CreateCampaignPage() {
       ? 'Chọn ít nhất một nền tảng.'
       : percentSum !== 100
         ? 'Tỉ lệ phân bổ của các nền tảng đã chọn phải bằng đúng 100%.'
-        : selected.some((p) => allocation[p].percent <= 0)
+        : selected.some((p) => percentOf(p) <= 0)
           ? 'Mỗi nền tảng đã chọn cần tỉ lệ lớn hơn 0%; bỏ chọn nền tảng không dùng.'
           : limit !== null && selected.some((p) => (budgets.get(p) ?? 0) > limit)
             ? `Mỗi kênh tối đa ${formatVnd(limit)}/ngày theo hạn mức của bạn.`
             : null;
   const isAllocationValid = allocationProblem === null;
 
-  const updateAllocation = (platform: Platform, changes: Partial<Allocation[Platform]>) =>
-    setAllocation((prev) => ({ ...prev, [platform]: { ...prev[platform], ...changes } }));
+  /** Adding or removing a platform re-splits evenly; fine-tune afterwards if needed. */
+  const togglePlatform = (platform: Platform) =>
+    setShares(splitEvenly(PLATFORMS.filter((p) => (p === platform ? shares[p] === undefined : shares[p] !== undefined))));
+  const setPercent = (platform: Platform, percent: number) => setShares(rebalance(shares, platform, percent));
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -67,7 +72,7 @@ export function CreateCampaignPage() {
       name,
       objective,
       totalDailyBudget,
-      allocations: selected.map((platform) => ({ platform, percent: allocation[platform].percent })),
+      allocations: selected.map((platform) => ({ platform, percent: percentOf(platform) })),
       creative,
     });
   };
@@ -121,37 +126,74 @@ export function CreateCampaignPage() {
                 />
               </Field>
             </div>
+            <div role="group" aria-label="Chọn nhanh tổng ngân sách" className="flex flex-wrap gap-2">
+              {BUDGET_PRESETS.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  aria-pressed={totalDailyBudget === amount}
+                  className={`${totalDailyBudget === amount ? 'btn-primary' : 'btn-secondary'} btn-sm tabular-nums`}
+                  onClick={() => setTotalDailyBudget(amount)}
+                >
+                  {formatVnd(amount)}
+                </button>
+              ))}
+            </div>
           </Step>
 
           <Step
             number="02"
             title="Chọn nền tảng và chia ngân sách"
             aside={
-              <Tag tone={percentSum === 100 ? 'positive' : 'negative'}>
-                <span className="tabular-nums">Tổng {percentSum}%</span>
-              </Tag>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-accent underline-offset-4 hover:underline disabled:opacity-40"
+                  disabled={selected.length < 2}
+                  onClick={() => setShares(splitEvenly(selected))}
+                >
+                  Chia đều
+                </button>
+                <Tag tone={percentSum === 100 ? 'positive' : 'negative'}>
+                  <span className="tabular-nums">Tổng {percentSum}%</span>
+                </Tag>
+              </div>
             }
           >
+            <p className="text-xs text-muted">
+              Bấm vào nền tảng để chọn hoặc bỏ. Sửa tỉ lệ một kênh, các kênh còn lại tự cân để tổng luôn là 100%.
+            </p>
             <ul className="divide-y divide-line rounded-lg border border-line">
               {PLATFORMS.map((platform) => {
-                const { enabled, percent } = allocation[platform];
+                const enabled = shares[platform] !== undefined;
+                const percent = percentOf(platform);
                 const budget = budgets.get(platform) ?? 0;
                 const min = minBudget.get(platform);
                 // Only this channel fails on the server; the others are still created.
                 const belowMin = enabled && percent > 0 && min !== undefined && budget < min;
                 return (
-                  <li key={platform} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-ink"
-                        checked={enabled}
-                        onChange={(e) => updateAllocation(platform, { enabled: e.target.checked })}
-                      />
+                  <li
+                    key={platform}
+                    className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 ${enabled ? '' : 'bg-canvas/60'}`}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={enabled}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      onClick={() => togglePlatform(platform)}
+                    >
+                      <span
+                        aria-hidden
+                        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                          enabled ? 'justify-end bg-ink' : 'justify-start bg-line-strong'
+                        }`}
+                      >
+                        <span className="h-4 w-4 rounded-full bg-white" />
+                      </span>
                       <PlatformTag platform={platform} />
                       {integrations.data && !connected.has(platform) && <Tag tone="caution">Chưa kết nối</Tag>}
                       {belowMin && <Tag tone="caution">Tối thiểu {formatVnd(min)}/ngày</Tag>}
-                    </label>
+                    </button>
                     <div className="flex items-center gap-2">
                       <input
                         aria-label={`Tỉ lệ ngân sách cho ${PLATFORM_META[platform].label} (%)`}
@@ -160,9 +202,9 @@ export function CreateCampaignPage() {
                         inputMode="numeric"
                         min={0}
                         max={100}
-                        disabled={!enabled}
+                        disabled={!enabled || selected.length < 2}
                         value={percent}
-                        onChange={(e) => updateAllocation(platform, { percent: Number(e.target.value) })}
+                        onChange={(e) => setPercent(platform, Number(e.target.value))}
                       />
                       <span className="text-sm text-muted">%</span>
                       <span className="w-28 text-right text-sm font-medium tabular-nums">
