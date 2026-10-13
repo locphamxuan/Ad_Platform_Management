@@ -53,6 +53,7 @@ interface InsightRow {
 export class FacebookAdsAdapter implements IAdPlatformAdapter {
   readonly platform = 'facebook' as const;
   readonly displayName = 'Facebook Ads';
+  readonly live = true;
   /** Meta rejects very small daily budgets; the exact floor depends on the account. */
   readonly minDailyBudget = 25_000;
 

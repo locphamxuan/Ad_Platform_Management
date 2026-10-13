@@ -17,10 +17,6 @@ export class IntegrationRepository {
     return this.collection.findOne({ platform }, WITHOUT_ID);
   }
 
-  async isConnected(platform: Platform): Promise<boolean> {
-    return (await this.find(platform))?.connected ?? false;
-  }
-
   async upsert(integration: Integration): Promise<Integration> {
     await this.collection.replaceOne({ platform: integration.platform }, { ...integration }, { upsert: true });
     return integration;

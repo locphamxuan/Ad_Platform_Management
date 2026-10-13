@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, setUnauthorizedHandler, tokenStore } from './api';
+import { api, hasSessionCookie, setUnauthorizedHandler } from './api';
 import type { AuthUser, Permission } from './types';
 
 interface AuthContextValue {
@@ -17,10 +17,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [restoring, setRestoring] = useState(() => tokenStore.get() !== null);
+  const [restoring, setRestoring] = useState(hasSessionCookie);
 
   const clearSession = useCallback(() => {
-    tokenStore.set(null);
     setUser(null);
     // Cached data belongs to the previous user's role; never show it to the next one.
     queryClient.clear();
@@ -28,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(clearSession);
-    if (!tokenStore.get()) return;
+    if (!hasSessionCookie()) return;
     api.auth
       .me()
       .then(setUser)
@@ -41,8 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       restoring,
       login: async (email, password) => {
+        // The server sets the session cookie; only the profile is kept in memory.
         const session = await api.auth.login(email, password);
-        tokenStore.set(session.token);
         setUser(session.user);
       },
       logout: async () => {

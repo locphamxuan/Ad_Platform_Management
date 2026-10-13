@@ -5,6 +5,8 @@ export default {
     extend: {
       fontFamily: {
         sans: ['"Be Vietnam Pro"', 'system-ui', 'sans-serif'],
+        // Design options only (Playfair Display, SIL Open Font License 1.1, has Vietnamese glyphs).
+        serif: ['"Playfair Display"', 'Georgia', 'serif'],
       },
       colors: {
         canvas: '#F5F4F0',

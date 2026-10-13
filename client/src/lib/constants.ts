@@ -48,6 +48,12 @@ export const ROLE_META: Record<Role, { label: string; description: string }> = {
   client: { label: 'Khách hàng', description: 'Chỉ xem báo cáo hiệu quả quảng cáo' },
 };
 
+/**
+ * Budget inputs move in whole thousands of dong. `min` must equal the step: browsers only accept
+ * min + n × step, so min=1 with step=1000 rejected round amounts such as 1.000.000.
+ */
+export const BUDGET_STEP = 1000;
+
 /** Day counts as strings because they round-trip through the URL. */
 export const DATE_RANGE_OPTIONS = ['7', '14', '30'] as const;
 export type DateRangeDays = (typeof DATE_RANGE_OPTIONS)[number];

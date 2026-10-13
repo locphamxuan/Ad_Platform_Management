@@ -41,6 +41,19 @@ export class ConflictError extends AppError {
 
 export class PlatformNotConnectedError extends AppError {
   constructor(platform: string) {
-    super('PLATFORM_NOT_CONNECTED', `Platform "${platform}" is not connected`, 409);
+    super(
+      'PLATFORM_NOT_CONNECTED',
+      `Nền tảng "${platform}" chưa kết nối (hoặc cần kết nối lại sau khi bật API thật) — vào trang Kết nối nền tảng`,
+      409,
+    );
+  }
+}
+
+export class TooManyRequestsError extends AppError {
+  constructor(
+    message: string,
+    public readonly retryAfterSeconds: number,
+  ) {
+    super('TOO_MANY_REQUESTS', message, 429);
   }
 }

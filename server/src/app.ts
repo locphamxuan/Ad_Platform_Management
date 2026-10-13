@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import type { Container } from './container.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { securityHeaders } from './middleware/security.js';
 import { createApiRouter } from './routes/index.js';
 
 export type AppOptions = {
@@ -13,6 +14,15 @@ export type AppOptions = {
 export function createApp(container: Container, options: AppOptions = {}) {
   const app = express();
   app.disable('x-powered-by');
+  // Behind Cloudflare, plain-http visitors must not send passwords unencrypted; local requests are untouched.
+  app.use((req, res, next) => {
+    if (req.headers['cf-connecting-ip'] && req.headers['x-forwarded-proto'] === 'http') {
+      res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+      return;
+    }
+    next();
+  });
+  app.use(securityHeaders);
   app.use(cors());
   app.use(express.json());
   app.get('/health', (_req, res) => {

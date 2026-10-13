@@ -80,6 +80,15 @@ function IntegrationCard({
           </h2>
           {integration.connected ? <Tag tone="positive">Đã kết nối</Tag> : <Tag>Chưa kết nối</Tag>}
         </div>
+        <p className="mt-2 text-xs">
+          {integration.live ? (
+            <Tag tone="positive">API thật</Tag>
+          ) : (
+            <span className="text-muted">
+              <Tag>Giả lập</Tag> Thao tác không gửi lên trình quản lý quảng cáo của nền tảng.
+            </span>
+          )}
+        </p>
 
         <dl className="mt-5 flex-1 space-y-2.5 text-sm">
           {integration.connected ? (

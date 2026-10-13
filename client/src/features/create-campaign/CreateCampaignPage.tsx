@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom';
 import { ErrorMessage, Field, PageHeader, PlatformTag, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
+import { allocateBudget } from '../../lib/budget';
+import { BUDGET_STEP, OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
 import { formatVnd } from '../../lib/format';
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import type { CreateUnifiedCampaignInput, Objective, Platform, PlatformPublishResult } from '../../lib/types';
@@ -34,8 +35,28 @@ export function CreateCampaignPage() {
 
   const selected = PLATFORMS.filter((p) => allocation[p].enabled);
   const percentSum = selected.reduce((sum, p) => sum + allocation[p].percent, 0);
-  const isAllocationValid = selected.length > 0 && percentSum === 100;
+  const budgets = new Map(
+    allocateBudget(
+      totalDailyBudget,
+      selected.map((platform) => ({ platform, percent: allocation[platform].percent })),
+    ).map((a) => [a.platform, a.dailyBudget]),
+  );
   const connected = new Set(integrations.data?.filter((i) => i.connected).map((i) => i.platform));
+  const minBudget = new Map(integrations.data?.map((i) => [i.platform, i.minDailyBudget]));
+  const limit = user?.dailyBudgetLimit ?? null;
+
+  // The server rejects the whole request for these, so block them here with a clear reason.
+  const allocationProblem =
+    selected.length === 0
+      ? 'Chọn ít nhất một nền tảng.'
+      : percentSum !== 100
+        ? 'Tỉ lệ phân bổ của các nền tảng đã chọn phải bằng đúng 100%.'
+        : selected.some((p) => allocation[p].percent <= 0)
+          ? 'Mỗi nền tảng đã chọn cần tỉ lệ lớn hơn 0%; bỏ chọn nền tảng không dùng.'
+          : limit !== null && selected.some((p) => (budgets.get(p) ?? 0) > limit)
+            ? `Mỗi kênh tối đa ${formatVnd(limit)}/ngày theo hạn mức của bạn.`
+            : null;
+  const isAllocationValid = allocationProblem === null;
 
   const updateAllocation = (platform: Platform, changes: Partial<Allocation[Platform]>) =>
     setAllocation((prev) => ({ ...prev, [platform]: { ...prev[platform], ...changes } }));
@@ -92,8 +113,8 @@ export function CreateCampaignPage() {
                   className="input tabular-nums"
                   type="number"
                   inputMode="numeric"
-                  min={1}
-                  step={1000}
+                  min={BUDGET_STEP}
+                  step={BUDGET_STEP}
                   required
                   value={totalDailyBudget}
                   onChange={(e) => setTotalDailyBudget(Number(e.target.value))}
@@ -114,6 +135,10 @@ export function CreateCampaignPage() {
             <ul className="divide-y divide-line rounded-lg border border-line">
               {PLATFORMS.map((platform) => {
                 const { enabled, percent } = allocation[platform];
+                const budget = budgets.get(platform) ?? 0;
+                const min = minBudget.get(platform);
+                // Only this channel fails on the server; the others are still created.
+                const belowMin = enabled && percent > 0 && min !== undefined && budget < min;
                 return (
                   <li key={platform} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                     <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
@@ -125,6 +150,7 @@ export function CreateCampaignPage() {
                       />
                       <PlatformTag platform={platform} />
                       {integrations.data && !connected.has(platform) && <Tag tone="caution">Chưa kết nối</Tag>}
+                      {belowMin && <Tag tone="caution">Tối thiểu {formatVnd(min)}/ngày</Tag>}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -140,7 +166,7 @@ export function CreateCampaignPage() {
                       />
                       <span className="text-sm text-muted">%</span>
                       <span className="w-28 text-right text-sm font-medium tabular-nums">
-                        {enabled ? formatVnd((totalDailyBudget * percent) / 100) : '—'}
+                        {enabled ? formatVnd(budget) : '—'}
                       </span>
                     </div>
                   </li>
@@ -197,9 +223,7 @@ export function CreateCampaignPage() {
                 <dd className="font-medium tabular-nums">{formatVnd(totalDailyBudget)}</dd>
               </div>
             </dl>
-            {!isAllocationValid && (
-              <p className="text-sm text-negative">Tỉ lệ phân bổ của các nền tảng đã chọn phải bằng đúng 100%.</p>
-            )}
+            {allocationProblem && <p className="text-sm text-negative">{allocationProblem}</p>}
             <button type="submit" className="btn-primary h-10 w-full" disabled={!isAllocationValid || create.isPending}>
               {create.isPending ? 'Đang tạo…' : 'Tạo trên các nền tảng đã chọn'}
             </button>

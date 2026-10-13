@@ -69,6 +69,8 @@ export interface Integration {
   accountId?: string;
   accountName?: string;
   connectedAt?: string;
+  /** False while the server uses the simulator for this platform (no real API credentials). */
+  live: boolean;
 }
 
 export interface Campaign {
