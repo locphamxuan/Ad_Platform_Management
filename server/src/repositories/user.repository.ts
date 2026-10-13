@@ -1,5 +1,5 @@
 import { MongoServerError, type Db } from 'mongodb';
-import type { User } from '../domain/types.js';
+import type { Role, User } from '../domain/types.js';
 import { ConflictError, NotFoundError } from '../domain/errors.js';
 import { COLLECTIONS, WITHOUT_ID } from '../db/mongo.js';
 
@@ -14,6 +14,10 @@ export class UserRepository {
 
   findAll(): Promise<User[]> {
     return this.collection.find({}, WITHOUT_ID).sort({ createdAt: 1 }).toArray();
+  }
+
+  findActiveByRole(role: Role): Promise<User[]> {
+    return this.collection.find({ role, active: true }, WITHOUT_ID).toArray();
   }
 
   findById(id: string): Promise<User | null> {

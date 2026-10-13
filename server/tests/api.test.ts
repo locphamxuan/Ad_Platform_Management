@@ -143,6 +143,55 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect((await bulk('PAUSED', tokens.client)).status).toBe(403);
     });
 
+    it('tells owners, and only owners, about media buyer changes', async () => {
+      const inbox = async (token: string) => (await call('/notifications', { token })).body;
+      await call('/notifications/read-all', { method: 'POST', token: tokens.owner });
+      const [campaign] = (await call('/campaigns?platform=tiktok', { token: tokens.buyer })).body;
+
+      // The owner's own change stays silent.
+      await call(`/campaigns/${campaign.id}`, { method: 'PATCH', token: tokens.owner, body: { dailyBudget: campaign.dailyBudget + 1000 } });
+      expect((await inbox(tokens.owner)).unread).toBe(0);
+
+      await call(`/campaigns/${campaign.id}`, { method: 'PATCH', token: tokens.buyer, body: { dailyBudget: campaign.dailyBudget + 2000 } });
+      const owner = await inbox(tokens.owner);
+      expect(owner.unread).toBe(1);
+      expect(owner.items[0]).toMatchObject({ actorName: 'Lê Media Buyer', campaignId: campaign.id });
+      expect(owner.items[0].message).toContain('Đổi ngân sách');
+      expect((await inbox(tokens.buyer)).items).toEqual([]);
+
+      expect((await call('/notifications/read-all', { method: 'POST', token: tokens.owner })).status).toBe(204);
+      expect((await inbox(tokens.owner)).unread).toBe(0);
+    });
+
+    it('deletes many campaigns, reporting failures per campaign, and notifies owners once', async () => {
+      const unified = {
+        name: 'Chiến dịch sẽ xoá',
+        objective: 'traffic',
+        totalDailyBudget: 1_000_000,
+        allocations: [
+          { platform: 'facebook', percent: 50 },
+          { platform: 'google', percent: 50 },
+        ],
+        creative: { headline: 'Xoá', primaryText: 'Xoá thử', landingUrl: 'https://example.com' },
+      };
+      const created = (await call('/campaigns/unified', { method: 'POST', token: tokens.buyer, body: unified })).body;
+      const ids = created.results.map((r: { campaign: { id: string } }) => r.campaign.id) as string[];
+      await call('/notifications/read-all', { method: 'POST', token: tokens.owner });
+
+      const remove = (token: string) =>
+        call('/campaigns/bulk-delete', { method: 'POST', token, body: { ids: [...ids, 'missing-campaign'] } });
+      expect((await remove(tokens.client)).status).toBe(403);
+      const result = await remove(tokens.buyer);
+      expect(result.body.deleted).toBe(2);
+      expect(result.body.errors).toEqual([expect.objectContaining({ campaignId: 'missing-campaign' })]);
+
+      const remaining = (await call('/campaigns', { token: tokens.buyer })).body as { id: string }[];
+      expect(remaining.some((c) => ids.includes(c.id))).toBe(false);
+      const owner = (await call('/notifications', { token: tokens.owner })).body;
+      expect(owner.unread).toBe(1);
+      expect(owner.items[0].message).toBe('Xoá 2 chiến dịch: "Chiến dịch sẽ xoá", "Chiến dịch sẽ xoá"');
+    });
+
     it('stops media buyers from managing integrations and users', async () => {
       expect((await call('/integrations/google/disconnect', { method: 'POST', token: tokens.buyer })).status).toBe(403);
       expect((await call('/users', { token: tokens.buyer })).status).toBe(403);

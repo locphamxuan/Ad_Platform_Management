@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import type { ActivityActor, ActivityLog, PublicUser } from '../domain/types.js';
+import type { ActivityActor, ActivityLog, PublicUser, Role } from '../domain/types.js';
 import type { ActivityRepository } from '../repositories/activity.repository.js';
 
 export interface Actor {
   type: ActivityActor;
   name: string;
   id?: string;
+  /** Set when actor is a user */
+  role?: Role;
 }
 
 export const SYSTEM_ACTOR: Actor = { type: 'system', name: 'Hệ thống' };
 
-export const userActor = (user: PublicUser): Actor => ({ type: 'user', name: user.name, id: user.id });
+export const userActor = (user: PublicUser): Actor => ({ type: 'user', name: user.name, id: user.id, role: user.role });
 
 export class ActivityService {
   constructor(private readonly activities: ActivityRepository) {}

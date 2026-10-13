@@ -24,10 +24,14 @@ export const campaignPatchSchema = z
   })
   .refine((v) => v.status !== undefined || v.dailyBudget !== undefined, 'Nothing to update');
 
+const campaignIdsSchema = z.array(z.string().min(1)).min(1).max(200);
+
 export const bulkCampaignStatusSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1).max(200),
+  ids: campaignIdsSchema,
   status: z.enum(['ACTIVE', 'PAUSED']),
 });
+
+export const bulkCampaignDeleteSchema = z.object({ ids: campaignIdsSchema });
 
 export const unifiedCampaignSchema = z.object({
   name: z.string().trim().min(3).max(120),

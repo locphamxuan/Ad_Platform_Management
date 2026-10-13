@@ -4,6 +4,7 @@ import type {
   Campaign,
   Integration,
   MetricDaily,
+  Notification,
   Rule,
   Session,
   User,
@@ -19,6 +20,7 @@ export const COLLECTIONS = {
   users: 'users',
   sessions: 'sessions',
   settings: 'settings',
+  notifications: 'notifications',
 } as const;
 
 export interface CollectionTypes {
@@ -30,6 +32,7 @@ export interface CollectionTypes {
   users: User;
   sessions: Session;
   settings: WorkspaceSettings;
+  notifications: Notification;
 }
 
 /** Excludes Mongo's internal _id so domain objects stay storage-agnostic. */
@@ -64,6 +67,7 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection(COLLECTIONS.metrics).createIndex({ date: 1 }),
     db.collection(COLLECTIONS.rules).createIndex({ id: 1 }, { unique: true }),
     db.collection(COLLECTIONS.activities).createIndex({ createdAt: -1 }),
+    db.collection(COLLECTIONS.notifications).createIndex({ recipientId: 1, createdAt: -1 }),
     db.collection(COLLECTIONS.users).createIndex({ id: 1 }, { unique: true }),
     db.collection(COLLECTIONS.users).createIndex({ email: 1 }, { unique: true }),
     db.collection(COLLECTIONS.sessions).createIndex({ tokenHash: 1 }, { unique: true }),

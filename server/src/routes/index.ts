@@ -16,6 +16,7 @@ import {
 import { userActor } from '../services/activity.service.js';
 import { toAuthProfile } from '../services/auth.service.js';
 import {
+  bulkCampaignDeleteSchema,
   bulkCampaignStatusSchema,
   campaignListQuerySchema,
   campaignPatchSchema,
@@ -74,6 +75,15 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     res.status(204).end();
   }));
 
+  // Every signed-in user reads only their own notifications.
+  router.get('/notifications', asyncHandler(async (_req, res) => {
+    res.json(await c.notifications.inbox(currentUser(res).id));
+  }));
+  router.post('/notifications/read-all', asyncHandler(async (_req, res) => {
+    await c.notifications.markAllRead(currentUser(res).id);
+    res.status(204).end();
+  }));
+
   router.get('/users', requirePermission('user:manage'), asyncHandler(async (_req, res) => {
     res.json(await c.users.list());
   }));
@@ -126,6 +136,10 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
   router.post('/campaigns/bulk-status', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const { ids, status } = bulkCampaignStatusSchema.parse(req.body);
     res.json(await c.campaigns.setStatusMany(ids, status, userActor(currentUser(res))));
+  }));
+  router.post('/campaigns/bulk-delete', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { ids } = bulkCampaignDeleteSchema.parse(req.body);
+    res.json(await c.campaigns.deleteMany(ids, userActor(currentUser(res))));
   }));
   router.post('/campaigns/unified', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const input = unifiedCampaignSchema.parse(req.body);

@@ -42,4 +42,8 @@ export class CampaignRepository {
     if (!updated) throw new NotFoundError('Campaign', id);
     return updated;
   }
+
+  async delete(id: string): Promise<void> {
+    await this.collection.deleteOne({ id });
+  }
 }

@@ -159,6 +159,7 @@ export async function seedDatabase(db: Db, passwords: SeedPasswords = {}): Promi
     users: await buildDemoUsers(now, passwords),
     sessions: [],
     settings: [],
+    notifications: [],
   };
   for (const [name, docs] of Object.entries(data)) {
     const collection = db.collection(name);
