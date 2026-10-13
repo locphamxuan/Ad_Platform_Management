@@ -226,6 +226,18 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect((await call('/campaigns/missing-campaign', { token: tokens.buyer })).status).toBe(404);
     });
 
+    it('ranks the ad accounts of another platform for the same campaign', async () => {
+      const campaign = await facebookCampaign();
+      const other = await call(`/campaigns/${campaign.id}/accounts?platform=tiktok`, { token: tokens.buyer });
+      expect(other.status).toBe(200);
+      const accounts = other.body.accounts as (Option & { platform: string })[];
+      expect(accounts).toHaveLength(3);
+      expect(accounts.every((a) => a.platform === 'tiktok' && !a.current)).toBe(true);
+      expect(accounts.filter((a) => a.recommended)).toHaveLength(1);
+      expect((await call(`/campaigns/${campaign.id}/accounts?platform=myspace`, { token: tokens.buyer })).status).toBe(400);
+      expect((await call(`/campaigns/${campaign.id}/accounts?platform=tiktok`, { token: tokens.client })).status).toBe(403);
+    });
+
     it('duplicates a campaign into another ad account, paused, and logs it on the copy', async () => {
       const campaign = await facebookCampaign();
       const detail = (await call(`/campaigns/${campaign.id}`, { token: tokens.buyer })).body;
