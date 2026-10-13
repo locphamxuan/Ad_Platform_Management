@@ -6,6 +6,8 @@ import type {
   Campaign,
   CampaignDetail,
   CampaignStatus,
+  CopyOptions,
+  CopyResult,
   CreateUnifiedCampaignInput,
   DashboardSummary,
   Integration,
@@ -129,8 +131,7 @@ export const api = {
       request<CampaignDetail>(`/campaigns/${encodeURIComponent(id)}${toQuery({ ...range })}`),
     accounts: (id: string, platform: Platform) =>
       request<CampaignDetail['advice']>(`/campaigns/${encodeURIComponent(id)}/accounts${toQuery({ platform })}`),
-    duplicate: (id: string, accountId: string) =>
-      post<Campaign>(`/campaigns/${encodeURIComponent(id)}/duplicate`, { accountId }),
+    copy: (id: string, options: CopyOptions) => post<CopyResult>(`/campaigns/${encodeURIComponent(id)}/copy`, options),
     update: (id: string, changes: { status?: CampaignStatus; dailyBudget?: number }) =>
       patch<Campaign>(`/campaigns/${id}`, changes),
     bulkStatus: (ids: string[], status: CampaignStatus) =>

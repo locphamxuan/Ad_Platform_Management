@@ -74,17 +74,25 @@ export function AdPreview({
   platforms,
   objective,
   title = 'Xem trước quảng cáo',
+  platformOptions,
+  onPlatformsChange,
 }: {
   creative: Creative;
   platforms: readonly Platform[];
   objective?: Objective;
   title?: string;
+  /** With onPlatformsChange: the platforms the viewer may switch on and off (at least one stays on) */
+  platformOptions?: readonly Platform[];
+  /** Receives an updater, like a state setter, so quick successive toggles all count */
+  onPlatformsChange?: (update: (current: Platform[]) => Platform[]) => void;
 }) {
   const [visible, setVisible] = useState(true);
-  const [format, setFormat] = useState<Format | 'all'>('all');
+  const [chosenFormat, setFormat] = useState<Format | 'all'>('all');
   const [expanded, setExpanded] = useState(false);
   const available = placementsFor(platforms.length > 0 ? platforms : ['facebook']);
   const formats = FORMATS.filter((f) => f.value === 'all' || available.some((p) => p.format === f.value));
+  // A format can disappear when platforms are switched off; fall back to showing everything.
+  const format = formats.some((f) => f.value === chosenFormat) ? chosenFormat : 'all';
   const shown = available.filter((p) => format === 'all' || p.format === format);
   const props: PreviewProps = {
     creative,
@@ -129,6 +137,39 @@ export function AdPreview({
       </div>
       {visible && (
         <>
+          {platformOptions && onPlatformsChange && platformOptions.length > 1 && (
+            <div role="group" aria-label="Nền tảng xem trước" className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+              <span className="text-2xs font-semibold uppercase tracking-[0.06em] text-muted">Nền tảng</span>
+              {platformOptions.map((p) => {
+                const on = platforms.includes(p);
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={on && platforms.length === 1}
+                    onClick={() =>
+                      onPlatformsChange((current) =>
+                        current.includes(p) ? (current.length > 1 ? current.filter((x) => x !== p) : current) : [...current, p],
+                      )
+                    }
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all disabled:cursor-not-allowed ${
+                      on ? 'border-accent/40 bg-accent-soft text-ink' : 'border-line text-muted hover:border-accent/30 hover:text-ink'
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`flex h-3.5 w-3.5 items-center justify-center rounded ${on ? 'text-white' : 'border border-line-strong'}`}
+                      style={on ? { background: PLATFORM_META[p].color } : undefined}
+                    >
+                      {on && <Icon name="check" size={10} strokeWidth={3} />}
+                    </span>
+                    {PLATFORM_META[p].label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {formats.length > 2 && (
             <div role="group" aria-label="Định dạng vị trí" className="flex items-center gap-1 border-b border-line px-4 py-2">
               {formats.map((f) => (

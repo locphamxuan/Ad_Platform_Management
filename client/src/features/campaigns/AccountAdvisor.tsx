@@ -17,21 +17,32 @@ const PARTS = [
   { key: 'maturity', label: 'Ổn định', max: 10 },
 ] as const;
 
-/** Every ad account the campaign could run in, ranked by the server's advisor, with the reasons. */
+export interface AccountChoice {
+  platform: Platform;
+  account: AdAccountOption;
+  /** Take over from the original (same platform) instead of adding a paused copy */
+  move: boolean;
+}
+
+/**
+ * Every ad account the campaign could run in, ranked by the server's advisor, with the reasons.
+ * Pick any account card, then move the campaign there, duplicate it, or expand to that platform.
+ */
 export function AccountAdvisor({
   detail,
-  canDuplicate,
-  duplicating,
-  onDuplicate,
+  canManage,
+  busy,
+  onChoose,
 }: {
   detail: CampaignDetail;
-  canDuplicate: boolean;
-  duplicating: string | null;
-  onDuplicate: (account: AdAccountOption) => void;
+  canManage: boolean;
+  busy: boolean;
+  onChoose: (choice: AccountChoice) => void;
 }) {
   const { campaign, accountCounts } = detail;
   // Other platforms show how this campaign would rank there, for expanding it to more channels.
   const [platform, setPlatform] = useState<Platform>(campaign.platform);
+  const [picked, setPicked] = useState<Partial<Record<Platform, string>>>({});
   const own = platform === campaign.platform;
   const other = useQuery({
     queryKey: queryKeys.campaignAccounts(campaign.id, platform),
@@ -41,14 +52,22 @@ export function AccountAdvisor({
   const advice = own ? detail.advice : (other.data ?? { accounts: [], recommendedId: null, lookbackDays: 30 });
   const total = accountCounts.reduce((sum, c) => sum + c.total, 0);
   const summary = own ? describeAdvice(advice.accounts) : describeOtherPlatform(advice.accounts, PLATFORM_META[platform].label);
-  const duplicateBlocked = !campaign.creative
+  // Pre-selects the advisor's pick so the best move is one click away.
+  const selected =
+    advice.accounts.find((a) => a.id === picked[platform]) ??
+    advice.accounts.find((a) => a.recommended) ??
+    advice.accounts[0];
+  const blocked = !campaign.creative
     ? 'Chiến dịch chưa có nội dung quảng cáo lưu trong AdHub'
     : !campaign.connected
       ? 'Nền tảng đang mất kết nối'
-      : null;
+      : selected && !selected.fit.eligible
+        ? 'Tài khoản này chưa đủ điều kiện chạy (bị khoá hoặc hết hạn mức)'
+        : null;
 
   return (
-    <section className="card overflow-hidden" aria-labelledby="accounts-title">
+    // overflow-clip rather than hidden, so the action bar can stay sticky while scrolling.
+    <section className="card overflow-clip" aria-labelledby="accounts-title">
       <div className="bg-ai-wash px-5 pb-5 pt-5 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -108,7 +127,7 @@ export function AccountAdvisor({
             <p>
               Chiến dịch đang chạy trên {PLATFORM_META[campaign.platform].label}. Đây là xếp hạng tham khảo nếu mở rộng sang{' '}
               {PLATFORM_META[platform].label} với cùng mục tiêu và ngân sách {formatVnd(campaign.dailyBudget)}/ngày.{' '}
-              {canDuplicate && (
+              {canManage && (
                 <Link to="/campaigns/new" className="whitespace-nowrap font-semibold text-accent hover:underline">
                   Tạo chiến dịch đa kênh →
                 </Link>
@@ -146,47 +165,136 @@ export function AccountAdvisor({
           </EmptyState>
         </div>
       ) : (
-        <ol className="grid gap-4 p-5 sm:p-6 md:grid-cols-2 2xl:grid-cols-3">
-          {advice.accounts.map((account, index) => (
-            <AccountCard
-              key={account.id}
-              rank={index + 1}
-              account={account}
-              action={
-                // Duplication stays within the campaign's own platform.
-                own && canDuplicate && !account.current && account.fit.eligible
-                  ? {
-                      blocked: duplicateBlocked,
-                      busy: duplicating === account.id,
-                      onClick: () => onDuplicate(account),
-                    }
-                  : null
-              }
+        <>
+          <div role="radiogroup" aria-label={`Chọn tài khoản ${PLATFORM_META[platform].label}`} className="grid gap-4 p-5 sm:p-6 md:grid-cols-2 2xl:grid-cols-3">
+            {advice.accounts.map((account, index) => (
+              <AccountCard
+                key={account.id}
+                rank={index + 1}
+                account={account}
+                selected={account.id === selected?.id}
+                onSelect={() => setPicked((p) => ({ ...p, [platform]: account.id }))}
+              />
+            ))}
+          </div>
+          {canManage && selected && (
+            <ActionBar
+              platformLabel={PLATFORM_META[platform].label}
+              own={own}
+              account={selected}
+              blocked={blocked}
+              busy={busy}
+              onChoose={(move) => onChoose({ platform, account: selected, move })}
             />
-          ))}
-        </ol>
+          )}
+        </>
       )}
     </section>
+  );
+}
+
+/** What can be done with the picked account; sticks to the bottom while the cards scroll by. */
+function ActionBar({
+  platformLabel,
+  own,
+  account,
+  blocked,
+  busy,
+  onChoose,
+}: {
+  platformLabel: string;
+  own: boolean;
+  account: AdAccountOption;
+  blocked: string | null;
+  busy: boolean;
+  onChoose: (move: boolean) => void;
+}) {
+  return (
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t border-line bg-surface/95 px-5 py-3.5 backdrop-blur sm:px-6">
+      {/* A minimum width so the buttons wrap below instead of squeezing the account name. */}
+      <div className="min-w-[14rem] flex-1">
+        <p className="text-2xs font-semibold uppercase tracking-[0.06em] text-muted">Đã chọn</p>
+        <p className="text-sm font-semibold text-ink">
+          {account.name} <span className="font-normal text-muted">· {account.fit.score}/100</span>
+        </p>
+        {blocked && <p className="text-xs text-caution">{blocked}</p>}
+      </div>
+      {own && account.current ? (
+        <p className="flex items-center gap-1.5 text-sm text-positive">
+          <Icon name="check" size={15} /> Chiến dịch đang chạy ở tài khoản này — chọn tài khoản khác để chuyển
+        </p>
+      ) : own ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={Boolean(blocked) || busy}
+            title="Tạo bản sao ở tài khoản này, tạm dừng chờ duyệt; bản gốc giữ nguyên"
+            onClick={() => onChoose(false)}
+          >
+            <Icon name="copy" size={15} /> Nhân bản (giữ bản gốc)
+          </button>
+          <button
+            type="button"
+            className="btn-ai"
+            disabled={Boolean(blocked) || busy}
+            title="Bản mới ở tài khoản này nhận trạng thái đang chạy, bản gốc tạm dừng"
+            onClick={() => onChoose(true)}
+          >
+            <Icon name="arrowRight" size={15} /> {busy ? 'Đang xử lý…' : 'Chuyển sang tài khoản này'}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn-ai"
+          disabled={Boolean(blocked) || busy}
+          title="Tạo chiến dịch cùng nội dung trên nền tảng này, tạm dừng chờ duyệt"
+          onClick={() => onChoose(false)}
+        >
+          <Icon name="plus" size={15} /> {busy ? 'Đang tạo…' : `Mở rộng sang ${platformLabel} ở tài khoản này`}
+        </button>
+      )}
+    </div>
   );
 }
 
 function AccountCard({
   rank,
   account,
-  action,
+  selected,
+  onSelect,
 }: {
   rank: number;
   account: AdAccountOption;
-  action: { blocked: string | null; busy: boolean; onClick: () => void } | null;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   const { fit, kpis } = account;
   const used = account.spendCap ? Math.min(1, (account.amountSpent ?? 0) / account.spendCap) : null;
   return (
-    <li
-      className={`relative flex flex-col rounded-2xl p-4 transition-shadow ${
+    // A div, not a button: the card holds lists and blocks, which buttons may not contain.
+    <div
+      role="radio"
+      tabIndex={0}
+      aria-checked={selected}
+      aria-label={`${account.name}, điểm ${fit.score}/100`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`relative flex cursor-pointer flex-col rounded-2xl p-4 text-left transition-all hover:-translate-y-0.5 ${
         account.recommended ? 'card-ai shadow-glow' : 'border border-line bg-surface-raised hover:shadow-soft'
-      } ${fit.eligible ? '' : 'opacity-70'}`}
+      } ${selected ? 'outline outline-2 outline-offset-2 outline-accent' : ''} ${fit.eligible ? '' : 'opacity-70'}`}
     >
+      {selected && (
+        <span aria-hidden className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-white shadow-soft">
+          <Icon name="check" size={14} strokeWidth={2.6} />
+        </span>
+      )}
       <div className="flex items-start gap-3">
         <span
           aria-hidden
@@ -282,21 +390,6 @@ function AccountCard({
           </li>
         ))}
       </ul>
-
-      {action && (
-        <div className="mt-auto pt-4">
-          <button
-            type="button"
-            className={`${account.recommended ? 'btn-ai' : 'btn-secondary'} btn-sm w-full`}
-            disabled={Boolean(action.blocked) || action.busy}
-            title={action.blocked ?? 'Tạo bản sao chiến dịch (cả nội dung) trong tài khoản này, ở trạng thái tạm dừng'}
-            onClick={action.onClick}
-          >
-            <Icon name="copy" size={14} />
-            {action.busy ? 'Đang nhân bản…' : account.recommended ? 'Nhân bản sang tài khoản đề xuất' : 'Nhân bản sang đây'}
-          </button>
-        </div>
-      )}
-    </li>
+    </div>
   );
 }
