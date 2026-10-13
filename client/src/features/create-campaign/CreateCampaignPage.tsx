@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { ErrorMessage, Field, PageHeader, PlatformTag, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
+import { BUDGET_STEP, OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
 import { formatVnd } from '../../lib/format';
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import type { CreateUnifiedCampaignInput, Objective, Platform, PlatformPublishResult } from '../../lib/types';
@@ -92,8 +92,8 @@ export function CreateCampaignPage() {
                   className="input tabular-nums"
                   type="number"
                   inputMode="numeric"
-                  min={1}
-                  step={1000}
+                  min={BUDGET_STEP}
+                  step={BUDGET_STEP}
                   required
                   value={totalDailyBudget}
                   onChange={(e) => setTotalDailyBudget(Number(e.target.value))}

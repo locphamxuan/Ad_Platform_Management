@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { ErrorMessage, Field, Segmented } from '../../components/ui';
 import { api } from '../../lib/api';
+import { BUDGET_STEP } from '../../lib/constants';
 import { formatVnd } from '../../lib/format';
 import { queryKeys } from '../../lib/query-keys';
 
@@ -62,8 +63,8 @@ export function BudgetLimitCard() {
             className="input tabular-nums"
             type="number"
             inputMode="numeric"
-            min={1}
-            step={100_000}
+            min={BUDGET_STEP}
+            step={BUDGET_STEP}
             required
             value={amount}
             onChange={(e) => setDraft({ mode, amount: Number(e.target.value) })}

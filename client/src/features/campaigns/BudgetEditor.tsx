@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BUDGET_STEP } from '../../lib/constants';
 import { formatVnd } from '../../lib/format';
 
 interface BudgetEditorProps {
@@ -43,9 +44,9 @@ export function BudgetEditor({ label, value, max, disabled, onSave }: BudgetEdit
       aria-label={label}
       type="number"
       inputMode="numeric"
-      min={1}
+      min={BUDGET_STEP}
       max={max}
-      step={1000}
+      step={BUDGET_STEP}
       title={max ? `Tối đa ${formatVnd(max)}/ngày` : undefined}
       className="input h-8 w-32 text-right tabular-nums"
       value={draft}
