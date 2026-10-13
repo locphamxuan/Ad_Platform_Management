@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { Icon } from '../../components/icons';
 import { PlatformTag, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { ROLE_META, ROLES } from '../../lib/constants';
 import { formatDateTime, formatDecimal, formatNumber, formatVnd } from '../../lib/format';
+import { LOW_ROAS } from '../../lib/insights';
 import { queryKeys } from '../../lib/query-keys';
 import type { Role } from '../../lib/types';
 
@@ -14,8 +16,6 @@ interface Range {
   to: string;
 }
 
-/** Below this ROAS a running campaign is flagged for the media buyer. */
-const LOW_ROAS = 2;
 const PROJECTION_DAYS = 30;
 
 /**
@@ -175,14 +175,15 @@ function FocusPanel({
   children: ReactNode;
 }) {
   return (
-    <section className="card-pad border-l-4 border-l-accent">
+    <section className="card-pad">
       <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <p className="eyebrow text-accent">Dành cho {ROLE_META[role].label}</p>
           <h2 className="mt-1 section-title">{title}</h2>
         </div>
-        <Link to={link.to} className="text-sm font-medium text-accent underline-offset-4 hover:underline">
+        <Link to={link.to} className="btn-ghost btn-sm text-accent">
           {link.label}
+          <Icon name="arrowRight" size={14} />
         </Link>
       </div>
       {children}

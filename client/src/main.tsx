@@ -5,7 +5,11 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { ApiError } from './lib/api';
 import { AuthProvider } from './lib/auth';
+import { applyTheme, initialTheme } from './lib/theme';
 import './index.css';
+
+// Before the first render, so the page never flashes the other theme.
+applyTheme(initialTheme());
 
 const queryClient = new QueryClient({
   defaultOptions: {

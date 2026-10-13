@@ -16,6 +16,7 @@ export function AccountPage() {
   return (
     <>
       <PageHeader
+        icon="user"
         eyebrow="Tài khoản"
         title="Thông tin cá nhân"
         description="Cập nhật tên hiển thị, email đăng nhập và mật khẩu của bạn."

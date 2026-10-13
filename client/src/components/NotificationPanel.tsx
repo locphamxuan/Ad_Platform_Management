@@ -1,16 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { queryKeys } from '../lib/query-keys';
+import { Icon } from './icons';
 
 /** How often the owner's inbox is re-checked for new changes made by media buyers. */
 const POLL_MS = 30_000;
 
-/** Sidebar inbox: media buyers' campaign edits and deletes, marked read when opened. */
+/** Top-bar inbox: media buyers' campaign edits and deletes, marked read when opened. */
 export function NotificationPanel() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
   // Remembered on open so the new items stay highlighted after they are marked read.
   const [freshIds, setFreshIds] = useState<ReadonlySet<string>>(new Set());
   const { data } = useQuery({ queryKey: queryKeys.notifications, queryFn: api.notifications.inbox, refetchInterval: POLL_MS });
@@ -21,6 +23,21 @@ export function NotificationPanel() {
   const unread = data?.unread ?? 0;
   const items = data?.items ?? [];
 
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !root.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [open]);
+
   const toggle = () => {
     if (!open) {
       setFreshIds(new Set(items.filter((n) => !n.readAt).map((n) => n.id)));
@@ -30,34 +47,43 @@ export function NotificationPanel() {
   };
 
   return (
-    <div className="border-t border-white/10 px-3 py-3">
+    <div ref={root} className="relative">
       <button
         type="button"
         aria-expanded={open}
         aria-controls="notification-list"
+        aria-label={unread > 0 ? `Thông báo, ${unread} chưa đọc` : 'Thông báo'}
         onClick={toggle}
-        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-white/70 hover:bg-white/[0.07] hover:text-white"
+        className="btn-icon relative"
       >
-        Thông báo
+        <Icon name="bell" />
         {unread > 0 && (
-          <span className="rounded-full bg-accent px-2 py-0.5 text-2xs font-semibold tabular-nums text-white">
-            {unread}
-            <span className="sr-only"> chưa đọc</span>
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-ai-gradient px-1 text-[0.625rem] font-bold tabular-nums text-white">
+            {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
       {open && (
-        <ul id="notification-list" className="mt-2 max-h-72 space-y-1 overflow-y-auto">
-          {items.length === 0 && <li className="px-3 py-2 text-xs text-white/50">Chưa có thông báo nào.</li>}
-          {items.map((n) => (
-            <li key={n.id} className={`rounded-lg px-3 py-2 text-xs ${freshIds.has(n.id) ? 'bg-white/10' : ''}`}>
-              <p className="text-white/90">
-                <span className="font-semibold">{n.actorName}</span> {lowerFirst(n.message)}
-              </p>
-              <p className="mt-0.5 text-white/45">{formatDateTime(n.createdAt)}</p>
-            </li>
-          ))}
-        </ul>
+        <div
+          id="notification-list"
+          className="absolute right-0 top-11 z-40 w-[min(22rem,calc(100vw-2rem))] animate-fade-up overflow-hidden rounded-2xl border border-line bg-surface shadow-lift"
+        >
+          <p className="border-b border-line px-4 py-3 text-sm font-semibold">Thông báo</p>
+          <ul className="max-h-80 divide-y divide-line overflow-y-auto">
+            {items.length === 0 && <li className="px-4 py-6 text-center text-sm text-muted">Chưa có thông báo nào.</li>}
+            {items.map((n) => (
+              <li key={n.id} className={`flex gap-3 px-4 py-3 text-sm ${freshIds.has(n.id) ? 'bg-accent-soft/60' : ''}`}>
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" style={{ opacity: freshIds.has(n.id) ? 1 : 0 }} />
+                <div className="min-w-0">
+                  <p className="text-ink">
+                    <span className="font-semibold">{n.actorName}</span> {lowerFirst(n.message)}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">{formatDateTime(n.createdAt)}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

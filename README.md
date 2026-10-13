@@ -15,6 +15,20 @@ Một nơi để quản lý **Facebook Ads, TikTok Ads và Google Ads**: kết n
 | Đăng nhập & phân quyền | 3 cấp vai trò, phiên đăng nhập lưu trong MongoDB, mỗi vai trò có dashboard và menu riêng |
 | Thông tin cá nhân | Mọi thành viên (kể cả Chủ sở hữu) tự sửa tên, email (cần mật khẩu hiện tại) và đổi mật khẩu; đổi mật khẩu sẽ đăng xuất các thiết bị khác |
 
+### Trợ lý thông minh
+
+AdHub dành cho mọi doanh nghiệp và cá nhân chạy quảng cáo, không gắn với ngành nào. Trợ lý chạy hoàn toàn trong trình duyệt bằng quy tắc suy luận trên số liệu sẵn có (`client/src/lib/insights.ts`, `features/*/parse-*.ts`, `brief.ts`): không gửi dữ liệu ra dịch vụ ngoài, không gọi mô hình ngôn ngữ.
+
+| Tính năng | Mô tả |
+|---|---|
+| Hỏi AdHub (Ctrl+K) | Một ô cho mọi thứ: gõ tên trang để chuyển, một câu tiếng Việt (có/không dấu) để trợ lý soạn rule hoặc chiến dịch, hoặc tên chiến dịch để tìm |
+| Bản tin tổng quan | Tóm tắt kỳ bằng lời, so với kỳ trước (Δ% trên từng KPI), nền tảng tốt/kém nhất, cảnh báo chi tiêu bất thường ngày gần nhất, dự báo chi tiêu tháng |
+| Đề xuất tối ưu | Mỗi chiến dịch một đề xuất (tạm dừng khi lỗ/không ra chuyển đổi, giảm/tăng 20% ngân sách, bật lại chiến dịch tốt) kèm lý do và tác động ước tính; áp dụng từng cái hoặc tất cả một lần, tôn trọng hạn mức và ngân sách tối thiểu |
+| Điểm sức khoẻ | Điểm 0–100 cho từng chiến dịch (ROAS, CPA so với tài khoản, CTR); sắp xếp “Cần xem trước”, chọn nhanh “Điểm thấp” |
+| Soạn chiến dịch từ một câu | VD “Giảm 30% gói chăm sóc da dịp 20/10, ngân sách 2 triệu/ngày” → tên, mục tiêu, ngân sách, chia kênh theo ROAS 30 ngày, 3 phương án nội dung, link gắn UTM; chấm điểm nội dung và xem trước quảng cáo. Nội dung sinh ra không bịa số liệu (số khách hàng, thời hạn, bảo hành) |
+| Rule bằng lời | VD “Tạm dừng khi CPA > 150k trong 3 ngày trên Facebook” → rule đầy đủ; gợi ý ngưỡng theo số liệu tài khoản; mô phỏng trước khi lưu: rule sẽ tác động những chiến dịch nào |
+| Giao diện | Sáng/tối (theo hệ điều hành hoặc chọn tay), hiển thị tốt trên di động |
+
 ## Vai trò (actor)
 
 Ba cấp, xếp từ cao xuống thấp. Mỗi cấp có **toàn bộ quyền của cấp dưới** và thêm phần riêng của mình:

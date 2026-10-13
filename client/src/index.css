@@ -3,8 +3,54 @@
 @tailwind utilities;
 
 @layer base {
-  html {
+  /* RGB channels, consumed as rgb(var(--x) / alpha) by tailwind.config.js. */
+  :root {
+    --canvas: 246 247 251;
+    --surface: 255 255 255;
+    --surface-raised: 250 251 253;
+    --ink: 17 19 31;
+    --ink-soft: 42 46 66;
+    --muted: 99 105 128;
+    --subtle: 150 155 175;
+    --line: 230 232 240;
+    --line-strong: 210 214 226;
+    --accent: 79 70 229;
+    --accent-hover: 67 56 202;
+    --accent-soft: 238 240 255;
+    --spark: 192 38 211;
+    --spark-soft: 251 238 255;
+    --positive: 4 120 87;
+    --positive-soft: 228 247 239;
+    --negative: 190 18 60;
+    --negative-soft: 255 238 242;
+    --caution: 180 83 9;
+    --caution-soft: 255 245 230;
     color-scheme: light;
+  }
+  :root[data-theme='dark'] {
+    --canvas: 10 11 18;
+    --surface: 18 20 30;
+    --surface-raised: 24 27 40;
+    --ink: 236 238 245;
+    --ink-soft: 200 204 220;
+    --muted: 148 154 178;
+    --subtle: 105 111 135;
+    --line: 38 42 58;
+    --line-strong: 56 61 82;
+    --accent: 129 140 248;
+    --accent-hover: 165 172 252;
+    --accent-soft: 34 36 74;
+    --spark: 232 121 249;
+    --spark-soft: 56 28 70;
+    --positive: 52 211 153;
+    --positive-soft: 10 46 36;
+    --negative: 251 113 133;
+    --negative-soft: 62 18 30;
+    --caution: 251 191 36;
+    --caution-soft: 54 38 10;
+    color-scheme: dark;
+  }
+  html {
     -webkit-tap-highlight-color: transparent;
   }
   body {
@@ -12,6 +58,9 @@
   }
   :focus-visible {
     @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+  ::selection {
+    @apply bg-accent/20;
   }
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -25,10 +74,19 @@
 
 @layer components {
   .card {
-    @apply rounded-xl border border-line bg-surface;
+    @apply rounded-2xl border border-line bg-surface shadow-soft;
   }
   .card-pad {
     @apply card p-5 sm:p-6;
+  }
+  /* Anything produced by the assistant: a gradient hairline marks it as a suggestion, not data. */
+  .card-ai {
+    @apply relative rounded-2xl bg-surface shadow-soft;
+    background-image: linear-gradient(rgb(var(--surface)), rgb(var(--surface))),
+      linear-gradient(135deg, rgb(var(--accent) / 0.55), rgb(var(--spark) / 0.55));
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    border: 1px solid transparent;
   }
   .section-title {
     @apply text-sm font-semibold text-ink;
@@ -36,31 +94,40 @@
   .eyebrow {
     @apply text-2xs font-semibold uppercase tracking-[0.08em] text-muted;
   }
+  .text-ai {
+    @apply bg-ai-gradient bg-clip-text text-transparent;
+  }
 
   .btn {
-    @apply inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg px-3.5 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45;
+    @apply inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-medium transition-all duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45;
   }
   .btn-primary {
-    @apply btn bg-ink text-white hover:bg-ink-soft active:bg-black;
+    @apply btn bg-ink text-canvas shadow-soft hover:bg-ink-soft;
   }
   .btn-accent {
     @apply btn bg-accent text-white hover:bg-accent-hover;
   }
+  .btn-ai {
+    @apply btn bg-ai-gradient text-white shadow-glow hover:brightness-110;
+  }
   .btn-secondary {
-    @apply btn border border-line-strong bg-surface text-ink hover:border-ink/40 hover:bg-canvas;
+    @apply btn border border-line-strong bg-surface text-ink hover:border-ink/25 hover:bg-surface-raised;
   }
   .btn-ghost {
-    @apply btn text-muted hover:bg-canvas hover:text-ink;
+    @apply btn text-muted hover:bg-ink/5 hover:text-ink;
   }
   .btn-danger {
     @apply btn border border-negative/25 bg-surface text-negative hover:bg-negative-soft;
   }
   .btn-sm {
-    @apply h-8 px-3 text-[0.8125rem];
+    @apply h-8 rounded-lg px-3 text-[0.8125rem];
+  }
+  .btn-icon {
+    @apply btn h-9 w-9 px-0 text-muted hover:bg-ink/5 hover:text-ink;
   }
 
   .input {
-    @apply h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink transition-colors duration-150 placeholder:text-subtle hover:border-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:bg-canvas disabled:text-subtle;
+    @apply h-10 w-full rounded-xl border border-line-strong bg-surface px-3 text-sm text-ink transition-colors duration-150 placeholder:text-subtle hover:border-ink/25 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:bg-canvas disabled:text-subtle;
   }
   textarea.input {
     @apply h-auto py-2.5;
@@ -80,5 +147,10 @@
   }
   .num {
     @apply text-right tabular-nums;
+  }
+
+  .skeleton {
+    @apply animate-shimmer rounded-lg bg-[length:200%_100%];
+    background-image: linear-gradient(90deg, rgb(var(--line) / 0.6) 0%, rgb(var(--line)) 50%, rgb(var(--line) / 0.6) 100%);
   }
 }

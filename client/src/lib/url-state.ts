@@ -25,6 +25,23 @@ export function useSearchParam<T extends string>(key: string, allowed: readonly 
   return [value, setValue] as const;
 }
 
+/** Free text kept in the URL (search boxes, drafts handed over from the assistant). */
+export function useTextParam(key: string) {
+  const [params, setParams] = useSearchParams();
+  const value = params.get(key) ?? '';
+  const setValue = (next: string) =>
+    setParams(
+      (prev) => {
+        const updated = new URLSearchParams(prev);
+        if (next) updated.set(key, next);
+        else updated.delete(key);
+        return updated;
+      },
+      { replace: true },
+    );
+  return [value, setValue] as const;
+}
+
 /** Shared "last N days" filter; the range is recomputed so it always ends today. */
 export function useDateRangeParam() {
   const [days, setDays] = useSearchParam('days', DATE_RANGE_OPTIONS, '7');
