@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ErrorMessage, Field, Loading, PageHeader, Tag } from '../../components/ui';
+import { Avatar, ErrorMessage, Field, Loading, PageHeader, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { ROLE_META, ROLES } from '../../lib/constants';
@@ -38,18 +38,20 @@ export function UsersPage() {
   return (
     <>
       <PageHeader
+        icon="users"
         eyebrow="Quản trị"
         title="Người dùng và phân quyền"
         description="Mỗi thành viên có một vai trò quyết định họ được xem và thay đổi những gì."
       />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {/* grid-cols-1 keeps the wide member table scrolling inside its card on phones. */}
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-4">
           <ErrorMessage error={error ?? update.error} />
           {isLoading && <Loading />}
           {data && (
             <div className="card relative overflow-x-auto">
               <table className="w-full min-w-[600px]">
-                <thead className="border-b border-line bg-canvas/60">
+                <thead className="border-b border-line bg-ink/[0.02]">
                   <tr>
                     <th className="table-head">Thành viên</th>
                     <th className="table-head">Vai trò</th>
@@ -64,13 +66,18 @@ export function UsersPage() {
                     const isMe = user.id === me?.id;
                     const editable = !isMe && assignable.includes(user.role);
                     return (
-                      <tr key={user.id} className={user.active ? 'hover:bg-canvas/50' : 'bg-canvas/40 text-muted'}>
-                        <td className="table-cell max-w-[240px]">
-                          <p className="truncate font-medium text-ink">
-                            {user.name}
-                            {isMe && <span className="ml-2 text-xs font-normal text-muted">(bạn)</span>}
-                          </p>
-                          <p className="truncate text-xs text-muted">{user.email}</p>
+                      <tr key={user.id} className={user.active ? 'hover:bg-ink/[0.02]' : 'bg-ink/[0.03] text-muted'}>
+                        <td className="table-cell max-w-[280px]">
+                          <div className="flex items-center gap-3">
+                            <Avatar name={user.name} size="sm" />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-ink">
+                                {user.name}
+                                {isMe && <span className="ml-2 text-xs font-normal text-muted">(bạn)</span>}
+                              </p>
+                              <p className="truncate text-xs text-muted">{user.email}</p>
+                            </div>
+                          </div>
                         </td>
                         <td className="table-cell">
                           {editable ? (
