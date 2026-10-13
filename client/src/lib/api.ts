@@ -1,6 +1,7 @@
 import type {
   ActivityLog,
   AuthUser,
+  BulkStatusResult,
   Campaign,
   CampaignStatus,
   CreateUnifiedCampaignInput,
@@ -123,6 +124,8 @@ export const api = {
       request<Campaign[]>(`/campaigns${toQuery({ ...filter })}`),
     update: (id: string, changes: { status?: CampaignStatus; dailyBudget?: number }) =>
       patch<Campaign>(`/campaigns/${id}`, changes),
+    bulkStatus: (ids: string[], status: CampaignStatus) =>
+      post<BulkStatusResult>('/campaigns/bulk-status', { ids, status }),
     createUnified: (input: CreateUnifiedCampaignInput) =>
       post<{ unifiedCampaignId: string; results: PlatformPublishResult[] }>('/campaigns/unified', input),
   },

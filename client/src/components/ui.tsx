@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type InputHTMLAttributes, type ReactNode } from 'react';
 import { DATE_RANGE_OPTIONS, PLATFORM_META, type DateRangeDays } from '../lib/constants';
 import type { CampaignStatus, Platform } from '../lib/types';
 
@@ -104,6 +104,18 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
       {hint && <span className="hint block">{hint}</span>}
     </label>
   );
+}
+
+/** "Select all" checkbox that also shows a partial selection. */
+export function IndeterminateCheckbox({
+  indeterminate,
+  ...props
+}: { indeterminate: boolean } & Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return <input ref={ref} type="checkbox" className="h-4 w-4 accent-ink" {...props} />;
 }
 
 /** Text-only toggle group; used for short filters instead of dropdowns. */

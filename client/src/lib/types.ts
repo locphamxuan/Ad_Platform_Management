@@ -95,6 +95,11 @@ export interface Campaign {
   kpis: Kpis;
 }
 
+export interface BulkStatusResult {
+  updated: number;
+  errors: { campaignId: string; message: string }[];
+}
+
 export interface DashboardSummary {
   range: { from: string; to: string };
   totals: Kpis;
