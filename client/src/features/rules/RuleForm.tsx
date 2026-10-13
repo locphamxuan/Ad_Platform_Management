@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { PLATFORM_META, PLATFORMS, RULE_ACTION_LABELS, RULE_METRIC_LABELS } from '../../lib/constants';
 import type { NewRule, RuleActionType, RuleMetric, RuleOperator } from '../../lib/types';
+import { suggestRuleName } from './describe-rule';
 
 const INITIAL_RULE: NewRule = {
   name: '',
@@ -13,6 +14,34 @@ const INITIAL_RULE: NewRule = {
   condition: { metric: 'cpa', operator: 'gt', threshold: 100_000, lookbackDays: 3 },
   action: { type: 'pause' },
 };
+
+/** Common optimisation rules: one click fills the whole form. */
+const TEMPLATES: { label: string; rule: Omit<NewRule, 'name' | 'enabled'> }[] = [
+  {
+    label: 'Cắt lỗ khi CPA cao',
+    rule: { platform: 'all', condition: { metric: 'cpa', operator: 'gt', threshold: 150_000, lookbackDays: 3 }, action: { type: 'pause' } },
+  },
+  {
+    label: 'Giảm ngân sách khi ROAS thấp',
+    rule: {
+      platform: 'all',
+      condition: { metric: 'roas', operator: 'lt', threshold: 1.5, lookbackDays: 3 },
+      action: { type: 'decrease_budget', value: 20 },
+    },
+  },
+  {
+    label: 'Dừng khi CTR thấp',
+    rule: { platform: 'all', condition: { metric: 'ctr', operator: 'lt', threshold: 0.5, lookbackDays: 7 }, action: { type: 'pause' } },
+  },
+  {
+    label: 'Tăng ngân sách khi ROAS tốt',
+    rule: {
+      platform: 'all',
+      condition: { metric: 'roas', operator: 'gt', threshold: 4, lookbackDays: 7 },
+      action: { type: 'increase_budget', value: 20 },
+    },
+  },
+];
 
 const isBudgetAction = (type: RuleActionType) => type === 'increase_budget' || type === 'decrease_budget';
 
@@ -23,7 +52,9 @@ export function RuleForm({ onCreated }: { onCreated: () => void }) {
   const actionTypes = (Object.keys(RULE_ACTION_LABELS) as RuleActionType[]).filter(
     (type) => type !== 'increase_budget' || !capped,
   );
+  const templates = TEMPLATES.filter((t) => actionTypes.includes(t.rule.action.type));
   const [rule, setRule] = useState<NewRule>(INITIAL_RULE);
+  const suggestedName = suggestRuleName(rule);
   const create = useMutation({
     mutationFn: api.rules.create,
     onSuccess: () => {
@@ -40,7 +71,7 @@ export function RuleForm({ onCreated }: { onCreated: () => void }) {
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    create.mutate(rule);
+    create.mutate({ ...rule, name: rule.name.trim() || suggestedName });
   };
 
   return (
@@ -49,16 +80,30 @@ export function RuleForm({ onCreated }: { onCreated: () => void }) {
         <p className="eyebrow">Rule mới</p>
         <h2 className="mt-1 section-title">Tạo quy tắc tự động</h2>
       </div>
-      <Field label="Tên quy tắc">
+      <div>
+        <p className="label">Dùng mẫu có sẵn</p>
+        <div className="flex flex-wrap gap-2">
+          {templates.map((template) => (
+            <button
+              key={template.label}
+              type="button"
+              className="btn-secondary btn-sm"
+              onClick={() => setRule({ ...template.rule, name: '', enabled: true })}
+            >
+              {template.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Field label="Tên quy tắc" hint="Để trống sẽ tự đặt tên theo điều kiện và hành động">
         <input
           className="input"
-          required
           minLength={3}
           maxLength={120}
           autoComplete="off"
           value={rule.name}
           onChange={(e) => setRule({ ...rule, name: e.target.value })}
-          placeholder="VD: Dừng quảng cáo đốt tiền"
+          placeholder={suggestedName}
         />
       </Field>
       <Field label="Áp dụng cho">
