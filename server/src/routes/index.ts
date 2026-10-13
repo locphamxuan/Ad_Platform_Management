@@ -23,6 +23,7 @@ import {
   changePasswordSchema,
   createUserSchema,
   dateRangeSchema,
+  duplicateCampaignSchema,
   loginSchema,
   platformSchema,
   ruleSchema,
@@ -123,6 +124,19 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     const { platform, status, ...range } = campaignListQuerySchema.parse(req.query);
     res.json(await c.campaigns.list({ platform, status }, range));
   }));
+  router.get('/campaigns/:id', requirePermission('campaign:view'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.json(await c.campaigns.getDetail(id, dateRangeSchema.parse(req.query)));
+  }));
+  router.post('/campaigns/:id/duplicate', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const { accountId } = duplicateCampaignSchema.parse(req.body);
+    const user = currentUser(res);
+    // The copy keeps the original budget, which must still be within this user's cap.
+    const { dailyBudget } = await c.repositories.campaigns.getById(id);
+    assertDailyBudgetAllowed(user.role, await c.settings.budgetLimitFor(user.role), dailyBudget);
+    res.status(201).json(await c.campaigns.duplicateToAccount(id, accountId, userActor(user)));
+  }));
   router.patch('/campaigns/:id', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
     const { status, dailyBudget } = campaignPatchSchema.parse(req.body);
@@ -184,8 +198,10 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
   }));
 
   router.get('/activity', requirePermission('activity:view'), asyncHandler(async (req, res) => {
-    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(req.query);
-    res.json(await c.activity.listRecent(limit));
+    const { limit, campaignId } = z
+      .object({ limit: z.coerce.number().int().min(1).max(500).default(100), campaignId: z.string().min(1).optional() })
+      .parse(req.query);
+    res.json(await c.activity.listRecent(limit, campaignId));
   }));
 
   return router;

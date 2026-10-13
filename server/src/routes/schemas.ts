@@ -33,6 +33,8 @@ export const bulkCampaignStatusSchema = z.object({
 
 export const bulkCampaignDeleteSchema = z.object({ ids: campaignIdsSchema });
 
+export const duplicateCampaignSchema = z.object({ accountId: z.string().trim().min(1).max(100) });
+
 export const unifiedCampaignSchema = z.object({
   name: z.string().trim().min(3).max(120),
   objective: z.enum(OBJECTIVES),
