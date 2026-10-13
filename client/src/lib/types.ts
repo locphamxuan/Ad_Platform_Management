@@ -4,7 +4,7 @@ export type CampaignStatus = 'ACTIVE' | 'PAUSED';
 export type RuleMetric = 'cpa' | 'roas' | 'spend' | 'ctr';
 export type RuleOperator = 'gt' | 'lt';
 export type RuleActionType = 'pause' | 'activate' | 'increase_budget' | 'decrease_budget';
-export type Role = 'owner' | 'admin' | 'media_buyer' | 'client';
+export type Role = 'owner' | 'media_buyer' | 'client';
 export type Permission =
   | 'report:view'
   | 'campaign:view'
@@ -33,6 +33,13 @@ export interface AuthUser extends User {
   permissions: Permission[];
   /** Max daily budget (VND) per campaign this user may set; null = no cap */
   dailyBudgetLimit: number | null;
+}
+
+export interface ProfileChanges {
+  name?: string;
+  email?: string;
+  /** Required by the server only when the email changes */
+  currentPassword?: string;
 }
 
 export interface WorkspaceSettings {
@@ -86,6 +93,11 @@ export interface Campaign {
   createdAt: string;
   connected: boolean;
   kpis: Kpis;
+}
+
+export interface BulkStatusResult {
+  updated: number;
+  errors: { campaignId: string; message: string }[];
 }
 
 export interface DashboardSummary {

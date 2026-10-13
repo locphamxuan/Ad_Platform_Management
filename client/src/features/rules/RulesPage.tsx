@@ -87,7 +87,7 @@ export function RulesPage() {
                     >
                       {rule.enabled ? 'Tắt rule' : 'Bật rule'}
                     </button>
-                    {isLocked(rule) && <span className="text-xs text-muted">Cần Quản trị viên để bật hoặc chạy</span>}
+                    {isLocked(rule) && <span className="text-xs text-muted">Cần Chủ sở hữu để bật hoặc chạy</span>}
                     <button
                       type="button"
                       className="btn-ghost btn-sm ml-auto text-negative hover:bg-negative-soft hover:text-negative"

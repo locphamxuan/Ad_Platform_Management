@@ -38,7 +38,7 @@ export function IntegrationsPage() {
         description="Kết nối tài khoản quảng cáo một lần, sau đó quản lý tất cả tại AdHub."
       />
       {!can('integration:manage') && (
-        <p className="mb-5 text-sm text-muted">Chỉ Chủ sở hữu và Quản trị viên được thay đổi kết nối.</p>
+        <p className="mb-5 text-sm text-muted">Chỉ Chủ sở hữu được thay đổi kết nối.</p>
       )}
       <div className="space-y-4">
         <ErrorMessage error={error ?? toggle.error} />

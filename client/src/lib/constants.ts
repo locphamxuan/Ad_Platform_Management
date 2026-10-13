@@ -30,16 +30,12 @@ export const RULE_ACTION_LABELS: Record<RuleActionType, string> = {
 };
 
 /** From most to least privileged; each level includes everything below it. */
-export const ROLES: Role[] = ['owner', 'admin', 'media_buyer', 'client'];
+export const ROLES: Role[] = ['owner', 'media_buyer', 'client'];
 
 export const ROLE_META: Record<Role, { label: string; description: string }> = {
   owner: {
     label: 'Chủ sở hữu',
-    description: 'Toàn quyền như Quản trị viên, thêm quyền bổ nhiệm Chủ sở hữu/Quản trị viên và đặt hạn mức ngân sách',
-  },
-  admin: {
-    label: 'Quản trị viên',
-    description: 'Kết nối nền tảng, quản lý Media Buyer và Khách hàng, duyệt ngân sách vượt hạn mức và rule tăng ngân sách',
+    description: 'Toàn quyền: kết nối nền tảng, quản lý thành viên, đặt hạn mức và duyệt ngân sách vượt hạn mức',
   },
   media_buyer: {
     label: 'Media Buyer',

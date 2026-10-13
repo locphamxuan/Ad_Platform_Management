@@ -1,6 +1,7 @@
 import type {
   ActivityLog,
   AuthUser,
+  BulkStatusResult,
   Campaign,
   CampaignStatus,
   CreateUnifiedCampaignInput,
@@ -10,6 +11,7 @@ import type {
   NewUser,
   Platform,
   PlatformPublishResult,
+  ProfileChanges,
   Role,
   Rule,
   RuleRunResult,
@@ -94,6 +96,9 @@ export const api = {
     login: (email: string, password: string) =>
       post<{ user: AuthUser }>('/auth/login', { email, password }),
     me: () => request<AuthUser>('/auth/me'),
+    updateProfile: (changes: ProfileChanges) => patch<AuthUser>('/auth/me', changes),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      post<void>('/auth/me/password', { currentPassword, newPassword }),
     logout: () => post<void>('/auth/logout'),
   },
   users: {
@@ -119,6 +124,8 @@ export const api = {
       request<Campaign[]>(`/campaigns${toQuery({ ...filter })}`),
     update: (id: string, changes: { status?: CampaignStatus; dailyBudget?: number }) =>
       patch<Campaign>(`/campaigns/${id}`, changes),
+    bulkStatus: (ids: string[], status: CampaignStatus) =>
+      post<BulkStatusResult>('/campaigns/bulk-status', { ids, status }),
     createUnified: (input: CreateUnifiedCampaignInput) =>
       post<{ unifiedCampaignId: string; results: PlatformPublishResult[] }>('/campaigns/unified', input),
   },

@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { PublicUser, Role } from '../domain/types.js';
-import { ForbiddenError } from '../domain/errors.js';
-import { hashPassword } from '../domain/password.js';
+import type { PublicUser, Role, User } from '../domain/types.js';
+import { ForbiddenError, ValidationError } from '../domain/errors.js';
+import { hashPassword, verifyPassword } from '../domain/password.js';
 import { canManageRole, ROLE_LABELS } from '../domain/permissions.js';
 import type { SessionRepository } from '../repositories/session.repository.js';
 import type { UserRepository } from '../repositories/user.repository.js';
 import { userActor, type ActivityService } from './activity.service.js';
-import { toPublicUser } from './auth.service.js';
+import { hashToken, toPublicUser } from './auth.service.js';
 
 export interface CreateUserInput {
   email: string;
@@ -19,6 +19,18 @@ export interface UpdateUserInput {
   name?: string;
   role?: Role;
   active?: boolean;
+}
+
+export interface UpdateProfileInput {
+  name?: string;
+  email?: string;
+  /** Required only when the email changes */
+  currentPassword?: string;
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export class UserService {
@@ -62,6 +74,49 @@ export class UserService {
     await this.activity.log(userActor(actor), describeUserChange(target.name, changes));
     return toPublicUser(updated);
   }
+
+  /** Any signed-in user edits their own name and email; a new email needs the current password. */
+  async updateProfile(actor: PublicUser, changes: UpdateProfileInput): Promise<PublicUser> {
+    const user = await this.users.getById(actor.id);
+    const email = changes.email?.toLowerCase();
+    const emailChanged = email !== undefined && email !== user.email;
+    if (emailChanged) await assertCurrentPassword(user, changes.currentPassword);
+
+    const set: { name?: string; email?: string } = {};
+    if (changes.name !== undefined && changes.name !== user.name) set.name = changes.name;
+    if (emailChanged) set.email = email;
+    if (Object.keys(set).length === 0) return toPublicUser(user);
+
+    const updated = toPublicUser(await this.users.update(user.id, set));
+    await this.activity.log(userActor(updated), describeProfileChange(user, set));
+    return updated;
+  }
+
+  /** Keeps the session that made the change and signs every other device out. */
+  async changePassword(actor: PublicUser, input: ChangePasswordInput, currentToken: string): Promise<void> {
+    const user = await this.users.getById(actor.id);
+    await assertCurrentPassword(user, input.currentPassword);
+    if (input.currentPassword === input.newPassword) {
+      throw new ValidationError('Mật khẩu mới phải khác mật khẩu hiện tại');
+    }
+    await this.users.update(user.id, { passwordHash: await hashPassword(input.newPassword) });
+    await this.sessions.deleteOtherSessions(user.id, hashToken(currentToken));
+    await this.activity.log(userActor(actor), `${user.name} đổi mật khẩu đăng nhập`);
+  }
+}
+
+/** 400 rather than 401: a typo here must not look like an expired session and sign the user out. */
+async function assertCurrentPassword(user: User, password: string | undefined): Promise<void> {
+  if (!password || !(await verifyPassword(password, user.passwordHash))) {
+    throw new ValidationError('Mật khẩu hiện tại không đúng');
+  }
+}
+
+function describeProfileChange(before: User, set: { name?: string; email?: string }): string {
+  const parts: string[] = [];
+  if (set.name) parts.push(`đổi tên thành "${set.name}"`);
+  if (set.email) parts.push(`đổi email thành ${set.email}`);
+  return `${before.name} cập nhật thông tin cá nhân: ${parts.join(', ')}`;
 }
 
 function assertCanManage(actor: PublicUser, role: Role): void {

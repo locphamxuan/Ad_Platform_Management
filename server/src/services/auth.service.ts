@@ -8,7 +8,7 @@ import type { UserRepository } from '../repositories/user.repository.js';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export const toPublicUser = ({ passwordHash: _passwordHash, ...user }: User): PublicUser => user;
 
