@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { ROLE_META } from '../lib/constants';
 import { NAV_ITEMS } from '../lib/navigation';
+import { NotificationPanel } from './NotificationPanel';
 
 export function Layout() {
   const { user, can, logout } = useAuth();
@@ -76,6 +77,9 @@ export function Layout() {
             ))}
           </ul>
         </nav>
+
+        {/* Only owners are notified, about media buyers' campaign edits and deletes. */}
+        {user?.role === 'owner' && <NotificationPanel />}
 
         {user && (
           <div className="border-t border-white/10 px-6 py-5">

@@ -100,6 +100,25 @@ export interface BulkStatusResult {
   errors: { campaignId: string; message: string }[];
 }
 
+export interface BulkDeleteResult {
+  deleted: number;
+  errors: { campaignId: string; message: string }[];
+}
+
+export interface Notification {
+  id: string;
+  actorName: string;
+  message: string;
+  campaignId?: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export interface NotificationInbox {
+  unread: number;
+  items: Notification[];
+}
+
 export interface DashboardSummary {
   range: { from: string; to: string };
   totals: Kpis;
