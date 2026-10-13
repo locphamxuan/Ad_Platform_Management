@@ -72,11 +72,23 @@ export const settingsSchema = z.object({
 const roleSchema = z.enum(ROLES);
 const userNameSchema = z.string().trim().min(2).max(80);
 
+const emailSchema = z.string().trim().email('Email không hợp lệ');
+const newPasswordSchema = z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự').max(128);
+
 export const createUserSchema = z.object({
-  email: z.string().trim().email(),
+  email: emailSchema,
   name: userNameSchema,
   role: roleSchema,
-  password: z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự').max(128),
+  password: newPasswordSchema,
+});
+
+export const updateProfileSchema = z
+  .object({ name: userNameSchema.optional(), email: emailSchema.optional(), currentPassword: z.string().max(128).optional() })
+  .refine((v) => v.name !== undefined || v.email !== undefined, 'Nothing to update');
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: newPasswordSchema,
 });
 
 export const updateUserSchema = z

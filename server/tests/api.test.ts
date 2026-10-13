@@ -374,4 +374,39 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect((await users.findOne({ id: 'legacy-admin' }))?.role).toBe('owner');
     });
   });
+
+  describe('own profile', () => {
+    const NEW_PASSWORD = 'mat-khau-moi-123';
+
+    it('lets the owner rename themselves and logs it', async () => {
+      const result = await call('/auth/me', { method: 'PATCH', token: tokens.owner, body: { name: 'Nguyễn Minh Chủ Mới' } });
+      expect(result.status).toBe(200);
+      expect(result.body).toMatchObject({ name: 'Nguyễn Minh Chủ Mới', role: 'owner' });
+      expect(result.body.permissions).toContain('workspace:manage');
+      const [latest] = (await call('/activity?limit=1', { token: tokens.owner })).body;
+      expect(latest.message).toContain('cập nhật thông tin cá nhân');
+    });
+
+    it('requires the current password to change the email, and keeps emails unique', async () => {
+      const change = (body: object) => call('/auth/me', { method: 'PATCH', token: tokens.buyer, body });
+      expect((await change({ email: 'buyer2@adhub.vn' })).status).toBe(400);
+      expect((await change({ email: 'buyer2@adhub.vn', currentPassword: 'wrong' })).status).toBe(400);
+      expect((await change({ email: 'owner@adhub.vn', currentPassword: DEMO_PASSWORD })).status).toBe(409);
+      expect((await change({ email: 'Buyer2@adhub.vn', currentPassword: DEMO_PASSWORD })).body.email).toBe('buyer2@adhub.vn');
+      expect((await login('buyer2@adhub.vn')).status).toBe(200);
+    });
+
+    it('changes the password and signs out every other session', async () => {
+      const other = (await login('owner@adhub.vn')).body.token;
+      const change = (currentPassword: string) =>
+        call('/auth/me/password', { method: 'POST', token: tokens.owner, body: { currentPassword, newPassword: NEW_PASSWORD } });
+      expect((await change('wrong')).status).toBe(400);
+      expect((await change(DEMO_PASSWORD)).status).toBe(204);
+
+      expect((await call('/auth/me', { token: tokens.owner })).status).toBe(200);
+      expect((await call('/auth/me', { token: other })).status).toBe(401);
+      expect((await login('owner@adhub.vn')).status).toBe(401);
+      expect((await login('owner@adhub.vn', NEW_PASSWORD)).status).toBe(200);
+    });
+  });
 });

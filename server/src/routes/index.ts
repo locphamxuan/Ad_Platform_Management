@@ -18,6 +18,7 @@ import { toAuthProfile } from '../services/auth.service.js';
 import {
   campaignListQuerySchema,
   campaignPatchSchema,
+  changePasswordSchema,
   createUserSchema,
   dateRangeSchema,
   loginSchema,
@@ -25,6 +26,7 @@ import {
   ruleSchema,
   settingsSchema,
   unifiedCampaignSchema,
+  updateProfileSchema,
   updateUserSchema,
 } from './schemas.js';
 
@@ -56,6 +58,14 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
   router.get('/auth/me', asyncHandler(async (_req, res) => {
     const user = currentUser(res);
     res.json(toAuthProfile(user, await c.settings.budgetLimitFor(user.role)));
+  }));
+  router.patch('/auth/me', asyncHandler(async (req, res) => {
+    const user = await c.users.updateProfile(currentUser(res), updateProfileSchema.parse(req.body));
+    res.json(toAuthProfile(user, await c.settings.budgetLimitFor(user.role)));
+  }));
+  router.post('/auth/me/password', asyncHandler(async (req, res) => {
+    await c.users.changePassword(currentUser(res), changePasswordSchema.parse(req.body), sessionToken(req) ?? '');
+    res.status(204).end();
   }));
   router.post('/auth/logout', asyncHandler(async (req, res) => {
     await c.auth.logout(sessionToken(req) ?? '');

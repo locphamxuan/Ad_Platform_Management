@@ -25,4 +25,9 @@ export class SessionRepository {
   async deleteByUser(userId: string): Promise<void> {
     await this.collection.deleteMany({ userId });
   }
+
+  /** Signs a user out everywhere except the session they are using right now. */
+  async deleteOtherSessions(userId: string, keepTokenHash: string): Promise<void> {
+    await this.collection.deleteMany({ userId, tokenHash: { $ne: keepTokenHash } });
+  }
 }

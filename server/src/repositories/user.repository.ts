@@ -31,24 +31,28 @@ export class UserRepository {
   }
 
   async insert(user: User): Promise<User> {
-    try {
-      await this.collection.insertOne({ ...user });
-    } catch (error) {
-      if (error instanceof MongoServerError && error.code === DUPLICATE_KEY) {
-        throw new ConflictError(`Email "${user.email}" đã được sử dụng`);
-      }
-      throw error;
-    }
+    await rejectDuplicateEmail(user.email, () => this.collection.insertOne({ ...user }));
     return user;
   }
 
-  async update(id: string, changes: Partial<Omit<User, 'id' | 'email'>>): Promise<User> {
-    const updated = await this.collection.findOneAndUpdate(
-      { id },
-      { $set: changes },
-      { ...WITHOUT_ID, returnDocument: 'after' },
+  async update(id: string, changes: Partial<Omit<User, 'id'>>): Promise<User> {
+    const normalized = changes.email ? { ...changes, email: changes.email.toLowerCase() } : changes;
+    const updated = await rejectDuplicateEmail(normalized.email ?? '', () =>
+      this.collection.findOneAndUpdate({ id }, { $set: normalized }, { ...WITHOUT_ID, returnDocument: 'after' }),
     );
     if (!updated) throw new NotFoundError('User', id);
     return updated;
+  }
+}
+
+/** The unique email index is the source of truth; turn its error into a readable conflict. */
+async function rejectDuplicateEmail<T>(email: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === DUPLICATE_KEY) {
+      throw new ConflictError(`Email "${email}" đã được sử dụng`);
+    }
+    throw error;
   }
 }
