@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { createContainer } from '../src/container.js';
 import { connectMongo } from '../src/db/mongo.js';
+import type { Campaign } from '../src/domain/types.js';
 import { DEMO_PASSWORD, seedDatabase } from '../src/seed.js';
 
 /**
@@ -238,22 +239,51 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect((await call(`/campaigns/${campaign.id}/accounts?platform=tiktok`, { token: tokens.client })).status).toBe(403);
     });
 
+    const copy = (id: string, body: object, token = tokens.buyer) =>
+      call(`/campaigns/${id}/copy`, { method: 'POST', token, body });
+
     it('duplicates a campaign into another ad account, paused, and logs it on the copy', async () => {
       const campaign = await facebookCampaign();
       const detail = (await call(`/campaigns/${campaign.id}`, { token: tokens.buyer })).body;
       const target = (detail.advice.accounts as Option[]).find((a) => !a.current && a.fit.eligible)!;
-      const duplicate = (accountId: string, token = tokens.buyer) =>
-        call(`/campaigns/${campaign.id}/duplicate`, { method: 'POST', token, body: { accountId } });
 
-      const copy = await duplicate(target.id);
-      expect(copy.status).toBe(201);
-      expect(copy.body).toMatchObject({ name: campaign.name, status: 'PAUSED', accountId: target.id });
-      expect(copy.body.creative).toEqual(detail.campaign.creative);
-      const [logged] = (await call(`/activity?campaignId=${copy.body.id}`, { token: tokens.owner })).body;
+      const result = await copy(campaign.id, { accountId: target.id });
+      expect(result.status).toBe(201);
+      expect(result.body).toMatchObject({ moved: false, account: { id: target.id } });
+      expect(result.body.campaign).toMatchObject({ name: campaign.name, status: 'PAUSED', accountId: target.id });
+      expect(result.body.campaign.creative).toEqual(detail.campaign.creative);
+      const [logged] = (await call(`/activity?campaignId=${result.body.campaign.id}`, { token: tokens.owner })).body;
       expect(logged.message).toContain('Nhân bản');
 
-      expect((await duplicate('act_not_mine')).status).toBe(400);
-      expect((await duplicate(target.id, tokens.client)).status).toBe(403);
+      expect((await copy(campaign.id, { accountId: 'act_not_mine' })).status).toBe(400);
+      expect((await copy(campaign.id, { accountId: target.id }, tokens.client)).status).toBe(403);
+    });
+
+    it('moves a running campaign to another account: the copy keeps running, the original pauses', async () => {
+      const campaigns = (await call('/campaigns?platform=google&status=ACTIVE', { token: tokens.buyer })).body as Campaign[];
+      const campaign = campaigns.find((c) => c.creative)!;
+      const detail = (await call(`/campaigns/${campaign.id}`, { token: tokens.buyer })).body;
+      const current = (detail.advice.accounts as Option[]).find((a) => a.current)!;
+      const target = (detail.advice.accounts as Option[]).find((a) => !a.current && a.fit.eligible)!;
+
+      expect((await copy(campaign.id, { accountId: current.id, move: true })).status).toBe(400);
+      const moved = await copy(campaign.id, { accountId: target.id, move: true });
+      expect(moved.status).toBe(201);
+      expect(moved.body).toMatchObject({ moved: true, campaign: { status: 'ACTIVE', accountId: target.id } });
+      const original = (await call(`/campaigns/${campaign.id}`, { token: tokens.buyer })).body.campaign;
+      expect(original).toMatchObject({ status: 'PAUSED', replacedBy: moved.body.campaign.id });
+      expect((await copy(campaign.id, { platform: 'tiktok', move: true })).status).toBe(400);
+    });
+
+    it('expands a campaign to another platform with new ad copy, in that platform’s best account', async () => {
+      const campaign = await facebookCampaign();
+      const creative = { headline: 'Phương án B – giảm 20%', primaryText: 'Nội dung thử nghiệm. Mua ngay!', landingUrl: 'https://example.com/b' };
+      const result = await copy(campaign.id, { platform: 'tiktok', creative });
+      expect(result.status).toBe(201);
+      expect(result.body.campaign).toMatchObject({ platform: 'tiktok', status: 'PAUSED', creative });
+      expect(result.body.account.id).toMatch(/^tt-act-/);
+      const detail = (await call(`/campaigns/${campaign.id}`, { token: tokens.buyer })).body;
+      expect(detail.siblings.map((s: { id: string }) => s.id)).toContain(result.body.campaign.id);
     });
 
     it('places a new campaign in the best-fitting ad account automatically', async () => {

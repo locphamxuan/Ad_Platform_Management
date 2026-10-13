@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Campaign, CampaignStatus, MetricDaily, Platform } from '../domain/types.js';
+import type { Campaign, CampaignStatus, Creative, MetricDaily, Platform } from '../domain/types.js';
 import { ValidationError } from '../domain/errors.js';
 import { eachDay, previousRange } from '../domain/dates.js';
 import { sumMetrics, toKpis, type Kpis } from '../domain/metrics.js';
@@ -18,6 +18,23 @@ export interface CampaignWithKpis extends Campaign {
 }
 
 export type DailyPoint = Omit<MetricDaily, 'campaignId'>;
+
+export interface CopyOptions {
+  /** Target account; absent = the advisor's best account on the target platform */
+  accountId?: string;
+  /** Target platform; absent = the campaign's own */
+  platform?: Platform;
+  /** Ad copy for the new campaign; absent = the campaign's own */
+  creative?: Creative;
+  /** Take over from the original (same platform only): keep it running there and pause the original */
+  move?: boolean;
+}
+
+export interface CopyResult {
+  campaign: Campaign;
+  account: { id: string; name: string };
+  moved: boolean;
+}
 
 export interface CampaignDetail {
   campaign: CampaignWithKpis;
@@ -119,45 +136,95 @@ export class CampaignService {
   }
 
   /**
-   * Re-creates the campaign, creative included, in another ad account of the same platform.
-   * Platforms cannot move a campaign between accounts, so this is how one changes account;
-   * the copy starts paused like every campaign AdHub creates, and the original is left untouched.
+   * Re-creates the campaign in another ad account, on its own platform or another one, optionally
+   * with different ad copy. Platforms cannot move a campaign between accounts, so `move` is a copy
+   * that takes over: it inherits the running status and the original is paused. Every other copy
+   * starts paused for review, like every campaign AdHub creates. Without `accountId` the advisor's
+   * best account for that platform is used.
    */
-  async duplicateToAccount(id: string, accountId: string, actor: Actor): Promise<Campaign> {
+  async copy(id: string, options: CopyOptions, actor: Actor): Promise<CopyResult> {
     const source = await this.campaigns.getById(id);
-    await this.integrations.assertConnected(source.platform);
-    if (!source.creative) {
+    const platform = options.platform ?? source.platform;
+    const crossPlatform = platform !== source.platform;
+    if (options.move && crossPlatform) {
+      throw new ValidationError('Chỉ chuyển được giữa các tài khoản cùng nền tảng; sang nền tảng khác hãy tạo bản mở rộng');
+    }
+    await this.integrations.assertConnected(platform);
+    const creative = options.creative ?? source.creative;
+    if (!creative) {
       throw new ValidationError('Chiến dịch này chưa có nội dung quảng cáo lưu trong AdHub nên chưa thể nhân bản');
     }
-    const account = (await this.integrations.accounts(source.platform)).find((a) => a.id === accountId);
-    if (!account) throw new ValidationError('Tài khoản quảng cáo không thuộc kết nối hiện tại');
-    if (!account.active) throw new ValidationError(`Tài khoản "${account.name}" đang bị vô hiệu hoá trên nền tảng`);
 
-    const created = await this.registry.get(source.platform).createCampaign({
+    const currentAccountId = crossPlatform
+      ? undefined
+      : (source.accountId ?? (await this.integrations.defaultAccountId(platform)));
+    const accounts = await this.integrations.accounts(platform);
+    const accountId =
+      options.accountId ??
+      (
+        await this.advisor.advise(platform, {
+          objective: source.objective,
+          dailyBudget: source.dailyBudget,
+          campaignId: id,
+          currentAccountId,
+        })
+      ).recommendedId;
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) {
+      throw new ValidationError(
+        options.accountId ? 'Tài khoản quảng cáo không thuộc kết nối hiện tại' : 'Không có tài khoản quảng cáo nào đủ điều kiện',
+      );
+    }
+    if (!account.active) throw new ValidationError(`Tài khoản "${account.name}" đang bị vô hiệu hoá trên nền tảng`);
+    if (options.move && account.id === currentAccountId) throw new ValidationError('Chiến dịch đã chạy ở tài khoản này');
+
+    const adapter = this.registry.get(platform);
+    if (source.dailyBudget < adapter.minDailyBudget) {
+      throw new ValidationError(`${adapter.displayName} yêu cầu ngân sách tối thiểu ${formatVnd(adapter.minDailyBudget)}/ngày`);
+    }
+    const created = await adapter.createCampaign({
       name: source.name,
       objective: source.objective,
       dailyBudget: source.dailyBudget,
-      creative: source.creative,
-      accountId,
+      creative,
+      accountId: account.id,
     });
+    // A move keeps delivery going: the copy is switched on before the original is paused.
+    const takesOver = Boolean(options.move) && source.status === 'ACTIVE';
+    if (takesOver) await adapter.updateStatus(created.externalId, 'ACTIVE');
+
+    // Copies on other platforms join the source's multi-channel group, which is created if needed.
+    const unifiedCampaignId = source.unifiedCampaignId ?? (crossPlatform ? randomUUID() : undefined);
+    if (unifiedCampaignId && !source.unifiedCampaignId) await this.campaigns.update(source.id, { unifiedCampaignId });
+
     const copy = await this.campaigns.insert({
       id: randomUUID(),
-      platform: source.platform,
+      platform,
       externalId: created.externalId,
       name: source.name,
       objective: source.objective,
       platformObjective: created.platformObjective,
-      status: 'PAUSED',
+      status: takesOver ? 'ACTIVE' : 'PAUSED',
       dailyBudget: source.dailyBudget,
-      unifiedCampaignId: source.unifiedCampaignId,
-      creative: source.creative,
-      accountId,
+      unifiedCampaignId,
+      creative,
+      accountId: account.id,
       createdAt: new Date().toISOString(),
     });
-    const message = `Nhân bản "${source.name}" sang tài khoản "${account.name}" (đang tạm dừng chờ duyệt)`;
+    if (takesOver) await this.registry.get(source.platform).updateStatus(source.externalId, 'PAUSED');
+    // The original points at its replacement, so nobody is advised to switch it back on.
+    if (options.move) await this.campaigns.update(source.id, { status: 'PAUSED', replacedBy: copy.id });
+
+    const newCopy = options.creative && !sameCreative(options.creative, source.creative) ? ' với nội dung mới' : '';
+    const message = options.move
+      ? `Chuyển "${source.name}" sang tài khoản "${account.name}"${newCopy}${takesOver ? ' — bản mới đang chạy, bản gốc đã tạm dừng' : ''}`
+      : crossPlatform
+        ? `Mở rộng "${source.name}" sang ${adapter.displayName}, tài khoản "${account.name}"${newCopy} (đang tạm dừng chờ duyệt)`
+        : `Nhân bản "${source.name}" sang tài khoản "${account.name}"${newCopy} (đang tạm dừng chờ duyệt)`;
     await this.activity.log(actor, message, copy.id);
+    if (options.move) await this.activity.log(actor, message, source.id);
     await this.notifications.notifyOwnersOfBuyerChange(actor, message, copy.id);
-    return copy;
+    return { campaign: copy, account: { id: account.id, name: account.name }, moved: Boolean(options.move) };
   }
 
   async list(filter: CampaignFilter, range: DateRange): Promise<CampaignWithKpis[]> {
@@ -265,6 +332,9 @@ export class CampaignService {
 }
 
 const statusVerb = (status: CampaignStatus) => (status === 'ACTIVE' ? 'Bật' : 'Tạm dừng');
+
+const sameCreative = (a: Creative, b?: Creative) =>
+  Boolean(b) && a.headline === b!.headline && a.primaryText === b!.primaryText && a.landingUrl === b!.landingUrl;
 
 const emptyDay = (campaignId: string, date: string): MetricDaily => ({
   campaignId,

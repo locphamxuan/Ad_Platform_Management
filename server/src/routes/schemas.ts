@@ -33,7 +33,18 @@ export const bulkCampaignStatusSchema = z.object({
 
 export const bulkCampaignDeleteSchema = z.object({ ids: campaignIdsSchema });
 
-export const duplicateCampaignSchema = z.object({ accountId: z.string().trim().min(1).max(100) });
+const creativeSchema = z.object({
+  headline: z.string().trim().min(1).max(100),
+  primaryText: z.string().trim().min(1).max(500),
+  landingUrl: z.string().url(),
+});
+
+export const copyCampaignSchema = z.object({
+  accountId: z.string().trim().min(1).max(100).optional(),
+  platform: platformSchema.optional(),
+  creative: creativeSchema.optional(),
+  move: z.boolean().optional(),
+});
 
 export const unifiedCampaignSchema = z.object({
   name: z.string().trim().min(3).max(120),
@@ -42,11 +53,7 @@ export const unifiedCampaignSchema = z.object({
   allocations: z
     .array(z.object({ platform: platformSchema, percent: z.number().positive().max(100) }))
     .min(1),
-  creative: z.object({
-    headline: z.string().trim().min(1).max(100),
-    primaryText: z.string().trim().min(1).max(500),
-    landingUrl: z.string().url(),
-  }),
+  creative: creativeSchema,
 });
 
 export const ruleSchema = z

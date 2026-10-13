@@ -36,6 +36,8 @@ export interface Campaign {
   creative?: Creative;
   /** Ad account the campaign runs in; absent = the integration's own account (campaigns made before multi-account) */
   accountId?: string;
+  /** Set when the campaign was moved to another account: the id of the campaign that took over */
+  replacedBy?: string;
   createdAt: string;
 }
 
