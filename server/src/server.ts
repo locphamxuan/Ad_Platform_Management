@@ -2,7 +2,6 @@ import type { Server } from 'node:http';
 import type { Express } from 'express';
 import { createApp } from './app.js';
 import { env, googleAdsConfig, metaConfig, seedPasswords, tiktokConfig } from './config/env.js';
-import { env, metaConfig, seedPasswords } from './config/env.js';
 import { createContainer } from './container.js';
 import { connectMongo } from './db/mongo.js';
 import { startAutomationScheduler } from './jobs/automation-scheduler.js';
