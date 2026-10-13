@@ -1,9 +1,14 @@
-import { AiBadge, EmptyState, PlatformTag, ScoreRing, Tag } from '../../components/ui';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AiBadge, EmptyState, ErrorMessage, PlatformTag, ScoreRing, Tag } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { api } from '../../lib/api';
 import { PLATFORM_META } from '../../lib/constants';
 import { formatCompactVnd, formatDecimal, formatVnd } from '../../lib/format';
-import type { AdAccountOption, CampaignDetail } from '../../lib/types';
-import { describeAdvice } from './campaign-insights';
+import { queryKeys } from '../../lib/query-keys';
+import type { AdAccountOption, CampaignDetail, Platform } from '../../lib/types';
+import { describeAdvice, describeOtherPlatform } from './campaign-insights';
 
 const PARTS = [
   { key: 'performance', label: 'Hiệu quả', max: 50 },
@@ -24,9 +29,18 @@ export function AccountAdvisor({
   duplicating: string | null;
   onDuplicate: (account: AdAccountOption) => void;
 }) {
-  const { campaign, advice, accountCounts } = detail;
+  const { campaign, accountCounts } = detail;
+  // Other platforms show how this campaign would rank there, for expanding it to more channels.
+  const [platform, setPlatform] = useState<Platform>(campaign.platform);
+  const own = platform === campaign.platform;
+  const other = useQuery({
+    queryKey: queryKeys.campaignAccounts(campaign.id, platform),
+    queryFn: () => api.campaigns.accounts(campaign.id, platform),
+    enabled: !own,
+  });
+  const advice = own ? detail.advice : (other.data ?? { accounts: [], recommendedId: null, lookbackDays: 30 });
   const total = accountCounts.reduce((sum, c) => sum + c.total, 0);
-  const summary = describeAdvice(advice.accounts);
+  const summary = own ? describeAdvice(advice.accounts) : describeOtherPlatform(advice.accounts, PLATFORM_META[platform].label);
   const duplicateBlocked = !campaign.creative
     ? 'Chiến dịch chưa có nội dung quảng cáo lưu trong AdHub'
     : !campaign.connected
@@ -52,7 +66,7 @@ export function AccountAdvisor({
           <div className="flex items-stretch gap-2">
             <div className="rounded-xl border border-line bg-surface px-3.5 py-2 text-center">
               <p className="text-xl font-semibold tabular-nums">{advice.accounts.length}</p>
-              <p className="text-2xs text-muted">trên {PLATFORM_META[campaign.platform].label}</p>
+              <p className="text-2xs text-muted">trên {PLATFORM_META[platform].label}</p>
             </div>
             <div className="rounded-xl border border-line bg-surface px-3.5 py-2 text-center">
               <p className="text-xl font-semibold tabular-nums">{total}</p>
@@ -61,22 +75,46 @@ export function AccountAdvisor({
           </div>
         </div>
         {accountCounts.length > 0 && (
-          <ul className="mt-4 flex flex-wrap gap-2" aria-label="Số tài khoản theo nền tảng">
-            {accountCounts.map((c) => (
-              <li
-                key={c.platform}
-                className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
-                  c.platform === campaign.platform ? 'border-accent/30 bg-accent-soft' : 'border-line bg-surface'
-                }`}
-              >
-                <PlatformTag platform={c.platform} compact />
-                <span className="font-medium">{PLATFORM_META[c.platform].label}</span>
-                <span className="tabular-nums text-muted">
-                  {c.total} tài khoản{c.active < c.total && ` · ${c.total - c.active} bị khoá`}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div role="tablist" aria-label="Tài khoản theo nền tảng" className="mt-4 flex flex-wrap gap-2">
+            {accountCounts.map((c) => {
+              const selected = c.platform === platform;
+              return (
+                <button
+                  key={c.platform}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setPlatform(c.platform)}
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition-all ${
+                    selected
+                      ? 'border-accent/40 bg-accent-soft shadow-soft ring-1 ring-accent/25'
+                      : 'border-line bg-surface hover:-translate-y-px hover:border-accent/30 hover:shadow-soft'
+                  }`}
+                >
+                  <PlatformTag platform={c.platform} compact />
+                  <span className="font-medium">{PLATFORM_META[c.platform].label}</span>
+                  <span className="tabular-nums text-muted">
+                    {c.total} tài khoản{c.active < c.total && ` · ${c.total - c.active} bị khoá`}
+                  </span>
+                  {c.platform === campaign.platform && <span className="text-2xs font-semibold text-accent">· đang chạy</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {!own && (
+          <div className="mt-3 flex items-start gap-2 text-xs text-muted">
+            <Icon name="info" size={14} className="mt-px shrink-0" />
+            <p>
+              Chiến dịch đang chạy trên {PLATFORM_META[campaign.platform].label}. Đây là xếp hạng tham khảo nếu mở rộng sang{' '}
+              {PLATFORM_META[platform].label} với cùng mục tiêu và ngân sách {formatVnd(campaign.dailyBudget)}/ngày.{' '}
+              {canDuplicate && (
+                <Link to="/campaigns/new" className="whitespace-nowrap font-semibold text-accent hover:underline">
+                  Tạo chiến dịch đa kênh →
+                </Link>
+              )}
+            </p>
+          </div>
         )}
         {summary && (
           <p
@@ -91,10 +129,20 @@ export function AccountAdvisor({
         )}
       </div>
 
-      {advice.accounts.length === 0 ? (
+      {!own && other.error ? (
+        <div className="p-5">
+          <ErrorMessage error={other.error} />
+        </div>
+      ) : !own && other.isLoading ? (
+        <div className="grid gap-4 p-5 sm:p-6 md:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="skeleton h-72 rounded-2xl" />
+          ))}
+        </div>
+      ) : advice.accounts.length === 0 ? (
         <div className="p-5">
           <EmptyState title="Chưa đọc được tài khoản quảng cáo" icon="plug">
-            {PLATFORM_META[campaign.platform].label} đang mất kết nối. Kết nối lại trong mục Kết nối nền tảng để xem và so sánh tài khoản.
+            {PLATFORM_META[platform].label} đang mất kết nối. Kết nối lại trong mục Kết nối nền tảng để xem và so sánh tài khoản.
           </EmptyState>
         </div>
       ) : (
@@ -105,7 +153,8 @@ export function AccountAdvisor({
               rank={index + 1}
               account={account}
               action={
-                canDuplicate && !account.current && account.fit.eligible
+                // Duplication stays within the campaign's own platform.
+                own && canDuplicate && !account.current && account.fit.eligible
                   ? {
                       blocked: duplicateBlocked,
                       busy: duplicating === account.id,

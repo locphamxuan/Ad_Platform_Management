@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { brandFrom, placementsFor } from '../src/components/AdPreview';
-import { bestDay, ctaAdvice, describeAdvice, summarizeCampaign } from '../src/features/campaigns/campaign-insights';
+import { bestDay, ctaAdvice, describeAdvice, describeOtherPlatform, summarizeCampaign } from '../src/features/campaigns/campaign-insights';
 import type { AdAccountOption, CampaignDetail, DailyPoint, Kpis } from '../src/lib/types';
 
 const kpis = (spend: number, revenue: number, conversions: number): Kpis => ({
@@ -96,6 +96,13 @@ describe('describeAdvice', () => {
     });
     expect(describeAdvice([{ ...here, recommended: true }])?.tone).toBe('positive');
     expect(describeAdvice([])).toBeNull();
+  });
+
+  it('frames another platform as an expansion, not a move', () => {
+    const best = option('t1', { name: 'TikTok chính', recommended: true, fit: { ...option('t1').fit, score: 70 } });
+    expect(describeOtherPlatform([best, option('t2')], 'TikTok')?.text).toBe(
+      'Nếu mở rộng sang TikTok, nên dùng "TikTok chính" — điểm phù hợp 70/100 trong 2 tài khoản.',
+    );
   });
 });
 

@@ -128,6 +128,11 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     const { id } = idParam.parse(req.params);
     res.json(await c.campaigns.getDetail(id, dateRangeSchema.parse(req.query)));
   }));
+  router.get('/campaigns/:id/accounts', requirePermission('campaign:view'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const { platform } = z.object({ platform: platformSchema }).parse(req.query);
+    res.json(await c.campaigns.adviseOn(id, platform));
+  }));
   router.post('/campaigns/:id/duplicate', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const { id } = idParam.parse(req.params);
     const { accountId } = duplicateCampaignSchema.parse(req.body);

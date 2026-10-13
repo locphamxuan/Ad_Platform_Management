@@ -80,6 +80,20 @@ export function describeAdvice(accounts: readonly AdAccountOption[]): { tone: 'p
   return { tone: 'ai', text: `Nên chạy trên "${best.name}" — điểm phù hợp ${best.fit.score}/100${gap}.` };
 }
 
+/** The same sentence when looking at another platform's accounts, where nothing runs yet. */
+export function describeOtherPlatform(
+  accounts: readonly AdAccountOption[],
+  platformLabel: string,
+): { tone: 'positive' | 'ai' | 'caution'; text: string } | null {
+  if (accounts.length === 0) return null;
+  const best = accounts.find((a) => a.recommended);
+  if (!best) return { tone: 'caution', text: `Không tài khoản ${platformLabel} nào đủ điều kiện — kiểm tra trạng thái và hạn mức chi tiêu.` };
+  return {
+    tone: 'ai',
+    text: `Nếu mở rộng sang ${platformLabel}, nên dùng "${best.name}" — điểm phù hợp ${best.fit.score}/100 trong ${accounts.length} tài khoản.`,
+  };
+}
+
 /** Advice on the call-to-action, as Ads Manager gives it next to the button picker. */
 export function ctaAdvice(objective: Objective): { label: string; reason: string } {
   const label = CTA_BY_OBJECTIVE[objective];

@@ -127,6 +127,8 @@ export const api = {
       request<Campaign[]>(`/campaigns${toQuery({ ...filter })}`),
     detail: (id: string, range: DateRange) =>
       request<CampaignDetail>(`/campaigns/${encodeURIComponent(id)}${toQuery({ ...range })}`),
+    accounts: (id: string, platform: Platform) =>
+      request<CampaignDetail['advice']>(`/campaigns/${encodeURIComponent(id)}/accounts${toQuery({ platform })}`),
     duplicate: (id: string, accountId: string) =>
       post<Campaign>(`/campaigns/${encodeURIComponent(id)}/duplicate`, { accountId }),
     update: (id: string, changes: { status?: CampaignStatus; dailyBudget?: number }) =>

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Campaign, CampaignStatus, MetricDaily } from '../domain/types.js';
+import type { Campaign, CampaignStatus, MetricDaily, Platform } from '../domain/types.js';
 import { ValidationError } from '../domain/errors.js';
 import { eachDay, previousRange } from '../domain/dates.js';
 import { sumMetrics, toKpis, type Kpis } from '../domain/metrics.js';
@@ -98,6 +98,24 @@ export class CampaignService {
         .filter((c) => c.unifiedCampaignId === campaign.unifiedCampaignId && c.id !== id)
         .map(({ id, platform, name, status, dailyBudget }) => ({ id, platform, name, status, dailyBudget })),
     };
+  }
+
+  /**
+   * Where the campaign would run best on another platform: that platform's accounts ranked for the
+   * same objective and daily budget. On its own platform this is the same advice as the detail page.
+   */
+  async adviseOn(id: string, platform: Platform): Promise<AccountAdvice> {
+    const campaign = await this.campaigns.getById(id);
+    const own = platform === campaign.platform;
+    const currentAccountId = own
+      ? (campaign.accountId ?? (await this.integrations.defaultAccountId(platform)))
+      : undefined;
+    return this.advisor.advise(platform, {
+      objective: campaign.objective,
+      dailyBudget: campaign.dailyBudget,
+      campaignId: id,
+      currentAccountId,
+    });
   }
 
   /**
