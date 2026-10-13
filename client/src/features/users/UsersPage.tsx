@@ -146,19 +146,35 @@ function RoleGuide() {
   );
 }
 
+/** Unambiguous characters only (no 0/O, 1/l/I) so a password read aloud or retyped still works. */
+const PASSWORD_ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generatePassword(length = 12): string {
+  const bytes = crypto.getRandomValues(new Uint32Array(length));
+  return Array.from(bytes, (n) => PASSWORD_ALPHABET[n % PASSWORD_ALPHABET.length]).join('');
+}
+
 function CreateUserForm({ roles, onCreated }: { roles: Role[]; onCreated: () => void }) {
-  const initial: NewUser = { email: '', name: '', role: roles.includes('media_buyer') ? 'media_buyer' : roles[0], password: '' };
+  const initial = (): NewUser => ({
+    email: '',
+    name: '',
+    role: roles.includes('media_buyer') ? 'media_buyer' : roles[0],
+    password: generatePassword(),
+  });
   const [form, setForm] = useState<NewUser>(initial);
+  const [created, setCreated] = useState<NewUser | null>(null);
   const create = useMutation({
     mutationFn: api.users.create,
-    onSuccess: () => {
-      setForm(initial);
+    onSuccess: (_user, submitted) => {
+      setCreated(submitted);
+      setForm(initial());
       onCreated();
     },
   });
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
+    setCreated(null);
     create.mutate(form);
   };
 
@@ -199,21 +215,56 @@ function CreateUserForm({ roles, onCreated }: { roles: Role[]; onCreated: () => 
           ))}
         </select>
       </Field>
-      <Field label="Mật khẩu tạm" hint="Tối thiểu 8 ký tự; gửi riêng cho thành viên">
-        <input
-          className="input"
-          type="password"
-          required
-          minLength={8}
-          autoComplete="new-password"
-          value={form.password}
-          onChange={(e) => setForm({ ...form, password: e.target.value })}
-        />
-      </Field>
+      <div>
+        <Field label="Mật khẩu tạm" hint="Tạo sẵn ngẫu nhiên; thành viên tự đổi ở trang Thông tin cá nhân">
+          <input
+            className="input font-mono"
+            type="text"
+            required
+            minLength={8}
+            spellCheck={false}
+            autoComplete="off"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+        </Field>
+        <button
+          type="button"
+          className="mt-1 text-xs font-medium text-accent underline-offset-4 hover:underline"
+          onClick={() => setForm({ ...form, password: generatePassword() })}
+        >
+          Tạo mật khẩu khác
+        </button>
+      </div>
       <button type="submit" className="btn-primary h-10 w-full" disabled={create.isPending}>
         {create.isPending ? 'Đang thêm…' : 'Thêm người dùng'}
       </button>
       <ErrorMessage error={create.error} />
+      {created && <CreatedCredentials user={created} />}
     </form>
+  );
+}
+
+/** Shown once after creating a member: the password is not stored readable anywhere else. */
+function CreatedCredentials({ user }: { user: NewUser }) {
+  const [copied, setCopied] = useState(false);
+  const text = `Tài khoản AdHub\nEmail: ${user.email}\nMật khẩu tạm: ${user.password}\nĐăng nhập: ${window.location.origin}/login`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // Clipboard blocked (non-https or denied): the text stays visible to copy by hand.
+    }
+  };
+
+  return (
+    <div role="status" className="space-y-2 rounded-lg border border-positive/20 bg-positive-soft p-3 text-sm">
+      <p className="font-medium text-positive">Đã thêm {user.name}</p>
+      <pre className="whitespace-pre-wrap break-all font-mono text-xs text-ink">{text}</pre>
+      <button type="button" className="btn-secondary btn-sm" onClick={() => void copy()}>
+        {copied ? 'Đã sao chép' : 'Sao chép thông tin đăng nhập'}
+      </button>
+    </div>
   );
 }
