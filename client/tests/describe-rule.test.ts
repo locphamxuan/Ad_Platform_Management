@@ -25,6 +25,11 @@ describe('describeRule', () => {
     const rule: Rule = { ...baseRule, platform: 'tiktok', action: { type: 'increase_budget', value: 20 } };
     expect(describeRule(rule)).toMatchObject({ action: 'Tăng ngân sách 20%', scope: 'TikTok' });
   });
+
+  it('keeps decimal thresholds instead of rounding them', () => {
+    const rule: Rule = { ...baseRule, condition: { metric: 'roas', operator: 'lt', threshold: 1.5, lookbackDays: 3 } };
+    expect(describeRule(rule).condition).toBe('ROAS (x) < 1,5 trong 3 ngày');
+  });
 });
 
 describe('suggestRuleName', () => {
