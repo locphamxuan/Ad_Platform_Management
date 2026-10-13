@@ -13,6 +13,12 @@ export interface CampaignWithKpis extends Campaign {
   kpis: Kpis;
 }
 
+export interface BulkStatusResult {
+  /** Campaigns now in the requested status, including those that already were */
+  updated: number;
+  errors: { campaignId: string; message: string }[];
+}
+
 export interface DateRange {
   from: string;
   to: string;
@@ -54,6 +60,23 @@ export class CampaignService {
     const verb = status === 'ACTIVE' ? 'Bật' : 'Tạm dừng';
     await this.activity.log(actor, `${verb} chiến dịch "${campaign.name}"`, id);
     return updated;
+  }
+
+  /**
+   * Bulk pause/activate. Each campaign succeeds or fails on its own (one disconnected platform must
+   * not block the rest); calls run one at a time so a large selection does not burst the platform APIs.
+   */
+  async setStatusMany(ids: string[], status: CampaignStatus, actor: Actor): Promise<BulkStatusResult> {
+    const result: BulkStatusResult = { updated: 0, errors: [] };
+    for (const id of new Set(ids)) {
+      try {
+        await this.setStatus(id, status, actor);
+        result.updated += 1;
+      } catch (error) {
+        result.errors.push({ campaignId: id, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return result;
   }
 
   async setBudget(id: string, dailyBudget: number, actor: Actor): Promise<Campaign> {

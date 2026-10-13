@@ -16,6 +16,7 @@ import {
 import { userActor } from '../services/activity.service.js';
 import { toAuthProfile } from '../services/auth.service.js';
 import {
+  bulkCampaignStatusSchema,
   campaignListQuerySchema,
   campaignPatchSchema,
   changePasswordSchema,
@@ -121,6 +122,10 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     if (status) await c.campaigns.setStatus(id, status, actor);
     if (dailyBudget) await c.campaigns.setBudget(id, dailyBudget, actor);
     res.json(await c.repositories.campaigns.getById(id));
+  }));
+  router.post('/campaigns/bulk-status', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { ids, status } = bulkCampaignStatusSchema.parse(req.body);
+    res.json(await c.campaigns.setStatusMany(ids, status, userActor(currentUser(res))));
   }));
   router.post('/campaigns/unified', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
     const input = unifiedCampaignSchema.parse(req.body);

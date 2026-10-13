@@ -126,6 +126,23 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
       expect(latest).toMatchObject({ actor: 'user', actorName: 'Lê Media Buyer' });
     });
 
+    it('pauses and resumes many campaigns in one request, reporting failures per campaign', async () => {
+      const campaigns = (await call('/campaigns?platform=google', { token: tokens.buyer })).body as { id: string }[];
+      const ids = [...campaigns.map((c) => c.id), 'missing-campaign'];
+      const bulk = (status: string, token = tokens.buyer) =>
+        call('/campaigns/bulk-status', { method: 'POST', token, body: { ids, status } });
+
+      const paused = await bulk('PAUSED');
+      expect(paused.status).toBe(200);
+      expect(paused.body.updated).toBe(campaigns.length);
+      expect(paused.body.errors).toEqual([expect.objectContaining({ campaignId: 'missing-campaign' })]);
+      const after = (await call('/campaigns?platform=google', { token: tokens.buyer })).body as { status: string }[];
+      expect(after.every((c) => c.status === 'PAUSED')).toBe(true);
+
+      expect((await bulk('ACTIVE')).body.updated).toBe(campaigns.length);
+      expect((await bulk('PAUSED', tokens.client)).status).toBe(403);
+    });
+
     it('stops media buyers from managing integrations and users', async () => {
       expect((await call('/integrations/google/disconnect', { method: 'POST', token: tokens.buyer })).status).toBe(403);
       expect((await call('/users', { token: tokens.buyer })).status).toBe(403);
