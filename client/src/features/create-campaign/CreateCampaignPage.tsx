@@ -9,6 +9,7 @@ import { BUDGET_STEP, OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../l
 import { formatVnd } from '../../lib/format';
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import type { CreateUnifiedCampaignInput, Objective, Platform, PlatformPublishResult } from '../../lib/types';
+import { suggestCampaign, TEMPLATES } from './autofill';
 
 /** Selected platforms and their share of the total; a platform is selected when it has a key. */
 type Shares = Partial<Record<Platform, number>>;
@@ -25,6 +26,8 @@ export function CreateCampaignPage() {
   // null = untouched: follow the default below, which waits for the integration list.
   const [chosenShares, setShares] = useState<Shares | null>(null);
   const [creative, setCreative] = useState({ headline: '', primaryText: '', landingUrl: 'https://' });
+  // Random first template so repeated demos differ; each autofill then cycles through the rest.
+  const [nextTemplate, setNextTemplate] = useState(() => Math.floor(Math.random() * TEMPLATES.length));
 
   const create = useMutation({
     mutationFn: (input: CreateUnifiedCampaignInput) => api.campaigns.createUnified(input),
@@ -37,7 +40,8 @@ export function CreateCampaignPage() {
 
   // Start with every connected platform, split evenly, so most campaigns need no clicks here at all.
   const connectedPlatforms = PLATFORMS.filter((p) => connected.has(p));
-  const shares = chosenShares ?? splitEvenly(connectedPlatforms.length > 0 ? connectedPlatforms : PLATFORMS);
+  const defaultPlatforms = connectedPlatforms.length > 0 ? connectedPlatforms : PLATFORMS;
+  const shares = chosenShares ?? splitEvenly(defaultPlatforms);
   const selected = PLATFORMS.filter((p) => shares[p] !== undefined);
   const percentOf = (p: Platform) => shares[p] ?? 0;
   const percentSum = selected.reduce((sum, p) => sum + percentOf(p), 0);
@@ -66,6 +70,18 @@ export function CreateCampaignPage() {
     setShares(splitEvenly(PLATFORMS.filter((p) => (p === platform ? shares[p] === undefined : shares[p] !== undefined))));
   const setPercent = (platform: Platform, percent: number) => setShares(rebalance(shares, platform, percent));
 
+  /** Fills every field with a ready-to-submit campaign; each click moves on to the next template. */
+  const autofill = () => {
+    const draft = suggestCampaign({ index: nextTemplate, now: new Date(), platforms: defaultPlatforms, minBudget, limit });
+    setName(draft.name);
+    setObjective(draft.objective);
+    setTotalDailyBudget(draft.totalDailyBudget);
+    setCreative(draft.creative);
+    setShares(null);
+    create.reset();
+    setNextTemplate((index) => index + 1);
+  };
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     create.mutate({
@@ -83,6 +99,11 @@ export function CreateCampaignPage() {
         eyebrow="Tạo một lần, chạy mọi kênh"
         title="Tạo chiến dịch đa kênh"
         description="AdHub tạo chiến dịch trên từng nền tảng ở trạng thái Tạm dừng để bạn kiểm tra trước khi chạy."
+        actions={
+          <button type="button" className="btn-secondary" onClick={autofill}>
+            Tự điền mẫu
+          </button>
+        }
       />
       <form onSubmit={onSubmit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
