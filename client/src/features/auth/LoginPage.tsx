@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { ErrorMessage, Field } from '../../components/ui';
+import { ErrorMessage, Field, SampleDataBanner } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { ROLE_META, ROLES } from '../../lib/constants';
 
@@ -30,7 +30,9 @@ export function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
+    <div className="flex min-h-screen flex-col">
+      <SampleDataBanner />
+      <div className="grid flex-1 lg:grid-cols-[1.1fr_1fr]">
       <section className="hidden flex-col justify-between bg-ink px-14 py-12 text-white lg:flex">
         <p className="text-lg font-bold tracking-tight" translate="no">
           AdHub<span className="text-accent">.</span>
@@ -95,6 +97,7 @@ export function LoginPage() {
           </form>
         </div>
       </section>
+      </div>
     </div>
   );
 }
