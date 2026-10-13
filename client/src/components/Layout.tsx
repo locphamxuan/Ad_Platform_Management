@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { ROLE_META } from '../lib/constants';
 import { NAV_ITEMS } from '../lib/navigation';
+import { useTheme } from '../lib/theme';
+import { CommandPalette } from './CommandPalette';
+import { Icon } from './icons';
 import { NotificationPanel } from './NotificationPanel';
+import { Avatar } from './ui';
 
 export function Layout() {
   const { user, can, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { pathname } = useLocation();
   const items = NAV_ITEMS.filter((item) => can(item.permission));
   const [prevPath, setPrevPath] = useState(pathname);
@@ -17,110 +23,146 @@ export function Layout() {
     setMenuOpen(false);
   }
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+
   return (
-    <div className="min-h-screen lg:flex">
+    <div className="min-h-screen bg-canvas bg-ai-wash bg-fixed lg:flex">
       <a
         href="#main"
-        className="sr-only z-50 rounded-md bg-ink px-3 py-2 text-sm text-white focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        className="sr-only z-50 rounded-md bg-ink px-3 py-2 text-sm text-canvas focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
       >
         Bỏ qua điều hướng
       </a>
 
-      <div className="flex items-center justify-between bg-ink px-4 py-3 lg:hidden">
-        <Wordmark />
-        <button
-          type="button"
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-white/80 hover:bg-white/10 hover:text-white"
-          aria-expanded={menuOpen}
-          aria-controls="sidebar"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          {menuOpen ? 'Đóng' : 'Menu'}
-        </button>
-      </div>
-
       <aside
         id="sidebar"
-        className={`${menuOpen ? 'flex' : 'hidden'} flex-col bg-ink text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-64 lg:shrink-0`}
+        className={`${menuOpen ? 'fixed inset-0 z-40 flex' : 'hidden'} flex-col border-r border-line bg-surface/95 backdrop-blur lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-64 lg:shrink-0`}
       >
-        <div className="hidden px-6 pb-8 pt-7 lg:block">
+        <div className="flex items-center justify-between px-5 pb-6 pt-6">
           <Wordmark />
-          <p className="mt-1.5 text-xs text-white/45">Facebook · TikTok · Google Ads</p>
+          <button type="button" className="btn-icon lg:hidden" aria-label="Đóng menu" onClick={() => setMenuOpen(false)}>
+            <Icon name="x" />
+          </button>
         </div>
 
-        <nav aria-label="Điều hướng chính" className="flex-1 overflow-y-auto px-3 py-3 lg:py-0">
+        <nav aria-label="Điều hướng chính" className="flex-1 overflow-y-auto px-3">
           <ul className="space-y-0.5">
-            {items.map((item, index) => (
+            {items.map((item) => (
               <li key={item.to}>
                 <NavLink
                   to={item.to}
                   end
                   className={({ isActive }) =>
-                    `group flex items-baseline gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150 ${
-                      isActive ? 'bg-white text-ink' : 'text-white/70 hover:bg-white/[0.07] hover:text-white'
+                    `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150 ${
+                      isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-ink/5 hover:text-ink'
                     }`
                   }
                 >
-                  {({ isActive }) => (
-                    <>
-                      <span
-                        aria-hidden
-                        className={`w-5 text-2xs tabular-nums ${isActive ? 'text-accent' : 'text-white/35 group-hover:text-white/60'}`}
-                      >
-                        {String(index + 1).padStart(2, '0')}
-                      </span>
-                      {item.label}
-                    </>
-                  )}
+                  <Icon name={item.icon} size={18} />
+                  {item.label}
                 </NavLink>
               </li>
             ))}
           </ul>
+
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="card-ai mt-6 block w-full p-4 text-left transition-shadow hover:shadow-glow"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <Icon name="sparkles" size={16} className="text-spark" />
+              <span className="text-ai">Trợ lý AdHub</span>
+            </span>
+            <span className="mt-1 block text-xs leading-relaxed text-muted">
+              Gõ một câu — trợ lý soạn chiến dịch, tạo rule hoặc tìm nhanh cho bạn.
+            </span>
+          </button>
         </nav>
 
-        {/* Only owners are notified, about media buyers' campaign edits and deletes. */}
-        {user?.role === 'owner' && <NotificationPanel />}
-
         {user && (
-          <div className="border-t border-white/10 px-6 py-5">
-            <p className="truncate text-sm font-medium">{user.name}</p>
-            <p className="mt-0.5 truncate text-xs text-white/50">
-              {ROLE_META[user.role].label} · {user.email}
-            </p>
-            <div className="mt-3 flex gap-4">
-              <NavLink
-                to="/account"
-                className={({ isActive }) =>
-                  `text-xs font-medium underline-offset-4 hover:text-white hover:underline ${isActive ? 'text-white' : 'text-white/60'}`
-                }
-              >
-                Thông tin cá nhân
+          <div className="m-3 flex items-center gap-3 rounded-2xl border border-line bg-surface-raised p-3">
+            <Avatar name={user.name} />
+            <div className="min-w-0 flex-1">
+              <NavLink to="/account" className="block truncate text-sm font-medium hover:text-accent">
+                {user.name}
               </NavLink>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="text-xs font-medium text-white/60 underline-offset-4 hover:text-white hover:underline"
-              >
-                Đăng xuất
-              </button>
+              <p className="truncate text-xs text-muted">{ROLE_META[user.role].label}</p>
             </div>
+            <button type="button" className="btn-icon h-8 w-8" aria-label="Đăng xuất" title="Đăng xuất" onClick={() => void logout()}>
+              <Icon name="logout" size={16} />
+            </button>
           </div>
         )}
       </aside>
 
-      <main id="main" className="min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-10">
-        <div className="mx-auto max-w-7xl">
-          <Outlet />
-        </div>
-      </main>
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line/70 bg-canvas/75 px-4 py-3 backdrop-blur sm:px-8 lg:px-12">
+          <button
+            type="button"
+            className="btn-icon lg:hidden"
+            aria-label="Mở menu"
+            aria-expanded={menuOpen}
+            aria-controls="sidebar"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Icon name="menu" />
+          </button>
+          <div className="lg:hidden">
+            <Wordmark />
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="ml-auto flex h-10 min-w-0 items-center gap-2.5 rounded-xl border border-line bg-surface px-3 text-sm text-subtle shadow-soft transition-colors hover:border-accent/40 hover:text-muted lg:ml-0 lg:w-full lg:max-w-md"
+          >
+            <Icon name="sparkles" size={16} className="shrink-0 text-spark" />
+            <span className="hidden truncate sm:inline">Hỏi AdHub hoặc tìm nhanh…</span>
+            <kbd className="ml-auto hidden rounded-md border border-line px-1.5 py-0.5 text-2xs text-muted md:block">Ctrl K</kbd>
+          </button>
+          <div className="flex items-center gap-1 lg:ml-auto">
+            {/* Only owners are notified, about media buyers' campaign edits and deletes. */}
+            {user?.role === 'owner' && <NotificationPanel />}
+            <button
+              type="button"
+              className="btn-icon"
+              aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+              onClick={toggleTheme}
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+            </button>
+          </div>
+        </header>
+
+        <main id="main" className="px-4 py-8 sm:px-8 lg:px-12 lg:py-10">
+          <div className="mx-auto max-w-7xl animate-fade-up" key={pathname}>
+            <Outlet />
+          </div>
+        </main>
+      </div>
+
+      <CommandPalette open={paletteOpen} onClose={closePalette} onToggleTheme={toggleTheme} />
     </div>
   );
 }
 
 function Wordmark() {
   return (
-    <p className="text-lg font-bold tracking-tight text-white" translate="no">
-      AdHub<span className="text-accent">.</span>
+    <p className="flex items-center gap-2 text-lg font-bold tracking-tight text-ink" translate="no">
+      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-ai-gradient text-white shadow-glow">
+        <Icon name="sparkles" size={16} />
+      </span>
+      AdHub
     </p>
   );
 }
