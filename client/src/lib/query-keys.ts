@@ -5,6 +5,9 @@ export const queryKeys = {
   integrations: ['integrations'] as const,
   dashboard: (from: string, to: string) => ['dashboard', from, to] as const,
   campaigns: (filter: object) => ['campaigns', filter] as const,
+  /** Under 'campaigns' so every campaign change refreshes the open detail page too */
+  campaign: (id: string, from: string, to: string) => ['campaigns', 'detail', id, from, to] as const,
+  campaignActivity: (id: string) => ['activity', 'campaign', id] as const,
   rules: ['rules'] as const,
   activity: ['activity'] as const,
   users: ['users'] as const,

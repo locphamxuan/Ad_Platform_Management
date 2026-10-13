@@ -34,7 +34,21 @@ export interface Campaign {
   dailyBudget: number;
   unifiedCampaignId?: string;
   creative?: Creative;
+  /** Ad account the campaign runs in; absent = the integration's own account (campaigns made before multi-account) */
+  accountId?: string;
   createdAt: string;
+}
+
+/** One ad account the connected login can run campaigns in. */
+export interface AdAccount {
+  id: string;
+  name: string;
+  /** False when the platform has disabled the account; it cannot deliver ads */
+  active: boolean;
+  /** Lifetime spending limit in VND; null = no limit */
+  spendCap: number | null;
+  /** Lifetime spend in VND as reported by the platform; null = unknown */
+  amountSpent: number | null;
 }
 
 export interface MetricDaily {

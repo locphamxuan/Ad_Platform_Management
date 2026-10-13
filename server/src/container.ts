@@ -15,6 +15,7 @@ import { RuleRepository } from './repositories/rule.repository.js';
 import { SessionRepository } from './repositories/session.repository.js';
 import { SettingsRepository } from './repositories/settings.repository.js';
 import { UserRepository } from './repositories/user.repository.js';
+import { AccountAdvisorService } from './services/account-advisor.service.js';
 import { ActivityService } from './services/activity.service.js';
 import { AuthService } from './services/auth.service.js';
 import { CampaignService } from './services/campaign.service.js';
@@ -53,6 +54,7 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
   const activity = new ActivityService(repositories.activities);
   const notifications = new NotificationService(repositories.notifications, repositories.users);
   const integrations = new IntegrationService(repositories.integrations, registry, activity);
+  const advisor = new AccountAdvisorService(repositories.campaigns, repositories.metrics, integrations, registry);
   const campaigns = new CampaignService(
     repositories.campaigns,
     repositories.metrics,
@@ -60,6 +62,7 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
     integrations,
     activity,
     notifications,
+    advisor,
   );
 
   return {
@@ -72,7 +75,7 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
     integrations,
     campaigns,
     dashboard: new DashboardService(repositories.campaigns, repositories.metrics, registry, integrations),
-    unifiedCampaigns: new UnifiedCampaignService(registry, integrations, repositories.campaigns, activity),
+    unifiedCampaigns: new UnifiedCampaignService(registry, integrations, repositories.campaigns, activity, advisor),
     rules: new RuleEngineService(
       repositories.rules,
       repositories.campaigns,

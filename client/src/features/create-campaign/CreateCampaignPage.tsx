@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { AdPreview } from '../../components/AdPreview';
 import { Icon } from '../../components/icons';
 import { AiBadge, ErrorMessage, Field, PageHeader, PlatformTag, ScoreRing, Tag } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -500,7 +501,7 @@ export function CreateCampaignPage() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-24">
-          <AdPreview creative={creative} />
+          <AdPreview creative={creative} platforms={selected} objective={objective} />
           <div className="card-pad space-y-4">
             <p className="eyebrow">Xác nhận</p>
             <dl className="space-y-2 text-sm">
@@ -548,44 +549,6 @@ function Step({ number, title, aside, children }: { number: string; title: strin
   );
 }
 
-/** How the ad reads in a feed, updated as the fields change. */
-function AdPreview({ creative }: { creative: CreateUnifiedCampaignInput['creative'] }) {
-  let domain = '';
-  try {
-    domain = new URL(creative.landingUrl).hostname;
-  } catch {
-    // Still being typed; show the placeholder domain.
-  }
-  return (
-    <div className="card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <p className="eyebrow flex items-center gap-1.5">
-          <Icon name="eye" size={13} /> Xem trước
-        </p>
-        <span className="text-2xs text-subtle">Bảng tin di động</span>
-      </div>
-      <div className="p-4">
-        <div className="flex items-center gap-2">
-          <span className="h-8 w-8 rounded-full bg-ai-gradient" aria-hidden />
-          <div>
-            <p className="text-sm font-semibold leading-tight">Thương hiệu của bạn</p>
-            <p className="text-2xs text-muted">Được tài trợ</p>
-          </div>
-        </div>
-        <p className="mt-3 whitespace-pre-line text-sm text-ink-soft">{creative.primaryText || 'Nội dung chính hiển thị ở đây…'}</p>
-      </div>
-      <div className="aspect-[1.91/1] bg-ai-gradient opacity-90" aria-hidden />
-      <div className="flex items-center justify-between gap-3 bg-ink/[0.03] px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-2xs uppercase text-muted">{domain || 'tenmien.vn'}</p>
-          <p className="truncate text-sm font-semibold">{creative.headline || 'Tiêu đề quảng cáo'}</p>
-        </div>
-        <span className="shrink-0 rounded-lg bg-ink/10 px-3 py-1.5 text-xs font-semibold">Tìm hiểu thêm</span>
-      </div>
-    </div>
-  );
-}
-
 function PublishResults({ results }: { results: PlatformPublishResult[] }) {
   return (
     <div className="card-pad animate-fade-up space-y-3" aria-live="polite">
@@ -600,6 +563,19 @@ function PublishResults({ results }: { results: PlatformPublishResult[] }) {
             <p className={`text-xs ${r.success ? 'text-muted' : 'text-negative'}`}>
               {r.success ? `${formatVnd(r.campaign.dailyBudget)}/ngày · ${r.campaign.platformObjective}` : r.error}
             </p>
+            {r.success && r.account && (
+              <p className="flex items-start gap-1.5 rounded-lg bg-spark-soft px-2 py-1.5 text-xs text-ink-soft">
+                <Icon name="sparkles" size={12} className="mt-0.5 shrink-0 text-spark" />
+                <span>
+                  Tự chọn tài khoản <span className="font-semibold">{r.account.name}</span>. {r.account.reason}
+                </span>
+              </p>
+            )}
+            {r.success && (
+              <Link to={`/campaigns/${r.campaign.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
+                Xem chi tiết & bản xem trước <Icon name="arrowRight" size={12} />
+              </Link>
+            )}
           </li>
         ))}
       </ul>

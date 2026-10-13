@@ -1,10 +1,12 @@
-import type { Campaign, CampaignStatus, Creative, MetricDaily, Objective, Platform } from '../domain/types.js';
+import type { AdAccount, Campaign, CampaignStatus, Creative, MetricDaily, Objective, Platform } from '../domain/types.js';
 
 export interface CreatePlatformCampaignInput {
   name: string;
   objective: Objective;
   dailyBudget: number;
   creative: Creative;
+  /** Ad account to create in; absent = the configured default account */
+  accountId?: string;
 }
 
 export interface CreatePlatformCampaignResult {
@@ -29,6 +31,8 @@ export interface IAdPlatformAdapter {
 
   mapObjective(objective: Objective): string;
   authorize(): Promise<{ accountId: string; accountName: string }>;
+  /** Every ad account the credentials can run campaigns in; always includes the authorised one. */
+  listAdAccounts(): Promise<AdAccount[]>;
   createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult>;
   updateStatus(externalId: string, status: CampaignStatus): Promise<void>;
   updateBudget(externalId: string, dailyBudget: number): Promise<void>;

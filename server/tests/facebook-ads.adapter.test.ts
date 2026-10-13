@@ -127,6 +127,28 @@ describe('FacebookAdsAdapter', () => {
     });
   });
 
+  it('lists the VND ad accounts with their spending limits', async () => {
+    const { http } = fakeGraph({
+      'GET me/adaccounts': {
+        data: [
+          { id: 'act_111', name: 'Chính', account_status: 1, currency: 'VND', amount_spent: '5000000', spend_cap: '0' },
+          { id: 'act_222', name: 'Phụ', account_status: 2, currency: 'VND', amount_spent: '100', spend_cap: '900000' },
+          { id: 'act_333', name: 'USD', account_status: 1, currency: 'USD' },
+        ],
+      },
+    });
+    await expect(new FacebookAdsAdapter(CONFIG, http).listAdAccounts()).resolves.toEqual([
+      { id: 'act_111', name: 'Chính', active: true, spendCap: null, amountSpent: 5_000_000 },
+      { id: 'act_222', name: 'Phụ', active: false, spendCap: 900_000, amountSpent: 100 },
+    ]);
+  });
+
+  it('creates the campaign in the ad account it is given', async () => {
+    const { http, calls } = fakeGraph({ 'POST act_222/campaigns': { id: '1' }, 'POST act_222/adsets': { id: '2' } });
+    await new FacebookAdsAdapter(CONFIG, http).createCampaign({ ...input, accountId: 'act_222' });
+    expect(calls.every((c) => c.path.startsWith('act_222/'))).toBe(true);
+  });
+
   it('reads one day of insights for the campaign', async () => {
     const { http, calls } = fakeGraph({ 'GET 9001/insights': { data: [] } });
     const campaign = { id: 'c1', externalId: '9001', objective: 'traffic' } as Campaign;

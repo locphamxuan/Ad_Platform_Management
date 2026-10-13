@@ -1,10 +1,13 @@
-import type { Campaign, CampaignStatus } from '../domain/types.js';
+import { randomUUID } from 'node:crypto';
+import type { Campaign, CampaignStatus, MetricDaily } from '../domain/types.js';
 import { ValidationError } from '../domain/errors.js';
+import { eachDay, previousRange } from '../domain/dates.js';
 import { sumMetrics, toKpis, type Kpis } from '../domain/metrics.js';
 import { formatVnd } from '../domain/format.js';
 import type { PlatformRegistry } from '../adapters/platform-registry.js';
 import type { CampaignFilter, CampaignRepository } from '../repositories/campaign.repository.js';
 import type { MetricRepository } from '../repositories/metric.repository.js';
+import type { AccountAdvice, AccountAdvisorService, AccountCount } from './account-advisor.service.js';
 import type { Actor, ActivityService } from './activity.service.js';
 import type { IntegrationService } from './integration.service.js';
 import type { NotificationService } from './notification.service.js';
@@ -12,6 +15,22 @@ import type { NotificationService } from './notification.service.js';
 export interface CampaignWithKpis extends Campaign {
   connected: boolean;
   kpis: Kpis;
+}
+
+export type DailyPoint = Omit<MetricDaily, 'campaignId'>;
+
+export interface CampaignDetail {
+  campaign: CampaignWithKpis;
+  /** Same-length period just before the range, for deltas */
+  previousKpis: Kpis;
+  /** One point per day of the range, zero-filled */
+  daily: DailyPoint[];
+  /** Where the campaign could run, best fit first */
+  advice: AccountAdvice;
+  /** Ad accounts per connected platform */
+  accountCounts: AccountCount[];
+  /** The same multi-channel campaign on the other platforms */
+  siblings: Pick<Campaign, 'id' | 'platform' | 'name' | 'status' | 'dailyBudget'>[];
 }
 
 export interface BulkStatusResult {
@@ -38,7 +57,90 @@ export class CampaignService {
     private readonly integrations: IntegrationService,
     private readonly activity: ActivityService,
     private readonly notifications: NotificationService,
+    private readonly advisor: AccountAdvisorService,
   ) {}
+
+  /** Everything the campaign page shows: results over time, the creative and where it should run. */
+  async getDetail(id: string, range: DateRange): Promise<CampaignDetail> {
+    const campaign = await this.campaigns.getById(id);
+    const connected = (await this.integrations.connectedPlatforms()).has(campaign.platform);
+    const previous = previousRange(range);
+    const rows = await this.metrics.findInRange(previous.from, range.to, [id]);
+    const inRange = rows.filter((r) => r.date >= range.from);
+    const byDate = new Map(inRange.map((r) => [r.date, r]));
+    const daily = eachDay(range.from, range.to).map((date): DailyPoint => {
+      const { campaignId: _campaignId, ...point } = byDate.get(date) ?? emptyDay(id, date);
+      return point;
+    });
+
+    const accountId = campaign.accountId ?? (await this.integrations.defaultAccountId(campaign.platform));
+    const noAdvice: AccountAdvice = { accounts: [], recommendedId: null, lookbackDays: 0 };
+    const [advice, accountCounts, siblings] = await Promise.all([
+      connected
+        ? this.advisor.advise(campaign.platform, {
+            objective: campaign.objective,
+            dailyBudget: campaign.dailyBudget,
+            campaignId: id,
+            currentAccountId: accountId,
+          })
+        : noAdvice,
+      this.advisor.counts(),
+      campaign.unifiedCampaignId ? this.campaigns.findAll() : Promise.resolve([]),
+    ]);
+
+    return {
+      campaign: { ...campaign, accountId, connected, kpis: toKpis(sumMetrics(inRange)) },
+      previousKpis: toKpis(sumMetrics(rows.filter((r) => r.date < range.from))),
+      daily,
+      advice,
+      accountCounts,
+      siblings: siblings
+        .filter((c) => c.unifiedCampaignId === campaign.unifiedCampaignId && c.id !== id)
+        .map(({ id, platform, name, status, dailyBudget }) => ({ id, platform, name, status, dailyBudget })),
+    };
+  }
+
+  /**
+   * Re-creates the campaign, creative included, in another ad account of the same platform.
+   * Platforms cannot move a campaign between accounts, so this is how one changes account;
+   * the copy starts paused like every campaign AdHub creates, and the original is left untouched.
+   */
+  async duplicateToAccount(id: string, accountId: string, actor: Actor): Promise<Campaign> {
+    const source = await this.campaigns.getById(id);
+    await this.integrations.assertConnected(source.platform);
+    if (!source.creative) {
+      throw new ValidationError('Chiến dịch này chưa có nội dung quảng cáo lưu trong AdHub nên chưa thể nhân bản');
+    }
+    const account = (await this.integrations.accounts(source.platform)).find((a) => a.id === accountId);
+    if (!account) throw new ValidationError('Tài khoản quảng cáo không thuộc kết nối hiện tại');
+    if (!account.active) throw new ValidationError(`Tài khoản "${account.name}" đang bị vô hiệu hoá trên nền tảng`);
+
+    const created = await this.registry.get(source.platform).createCampaign({
+      name: source.name,
+      objective: source.objective,
+      dailyBudget: source.dailyBudget,
+      creative: source.creative,
+      accountId,
+    });
+    const copy = await this.campaigns.insert({
+      id: randomUUID(),
+      platform: source.platform,
+      externalId: created.externalId,
+      name: source.name,
+      objective: source.objective,
+      platformObjective: created.platformObjective,
+      status: 'PAUSED',
+      dailyBudget: source.dailyBudget,
+      unifiedCampaignId: source.unifiedCampaignId,
+      creative: source.creative,
+      accountId,
+      createdAt: new Date().toISOString(),
+    });
+    const message = `Nhân bản "${source.name}" sang tài khoản "${account.name}" (đang tạm dừng chờ duyệt)`;
+    await this.activity.log(actor, message, copy.id);
+    await this.notifications.notifyOwnersOfBuyerChange(actor, message, copy.id);
+    return copy;
+  }
 
   async list(filter: CampaignFilter, range: DateRange): Promise<CampaignWithKpis[]> {
     const [campaigns, connected] = await Promise.all([
@@ -145,6 +247,16 @@ export class CampaignService {
 }
 
 const statusVerb = (status: CampaignStatus) => (status === 'ACTIVE' ? 'Bật' : 'Tạm dừng');
+
+const emptyDay = (campaignId: string, date: string): MetricDaily => ({
+  campaignId,
+  date,
+  spend: 0,
+  impressions: 0,
+  clicks: 0,
+  conversions: 0,
+  revenue: 0,
+});
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

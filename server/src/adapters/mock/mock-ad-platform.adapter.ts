@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Campaign, CampaignStatus, MetricDaily, Objective, Platform } from '../../domain/types.js';
+import type { AdAccount, Campaign, CampaignStatus, MetricDaily, Objective, Platform } from '../../domain/types.js';
 import type {
   CreatePlatformCampaignInput,
   CreatePlatformCampaignResult,
@@ -40,10 +40,12 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
   }
 
   async authorize() {
-    return {
-      accountId: `${this.profile.externalIdPrefix}-act-${randomUUID().slice(0, 8)}`,
-      accountName: `${this.displayName} Ad Account`,
-    };
+    const [main] = mockAdAccounts(this.profile);
+    return { accountId: main.id, accountName: main.name };
+  }
+
+  async listAdAccounts(): Promise<AdAccount[]> {
+    return mockAdAccounts(this.profile);
   }
 
   async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
@@ -62,6 +64,19 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {
     return simulateDailyMetrics(this.profile, campaign.id, campaign.dailyBudget, date, this.random);
   }
+}
+
+/**
+ * A typical setup: a main account, a second one used to scale, and a nearly exhausted test account
+ * (so the advisor has a spending limit to steer around). Stable ids, shared with the seed.
+ */
+export function mockAdAccounts(profile: MockPlatformProfile): AdAccount[] {
+  const id = (suffix: string) => `${profile.externalIdPrefix}-act-${suffix}`;
+  return [
+    { id: id('demo'), name: `${profile.displayName} · Tài khoản chính`, active: true, spendCap: null, amountSpent: null },
+    { id: id('scale'), name: `${profile.displayName} · Tài khoản mở rộng`, active: true, spendCap: 300_000_000, amountSpent: 84_000_000 },
+    { id: id('test'), name: `${profile.displayName} · Tài khoản thử nghiệm`, active: true, spendCap: 40_000_000, amountSpent: 37_500_000 },
+  ];
 }
 
 /** Shared by the adapter and the seed so generated data stays consistent. */

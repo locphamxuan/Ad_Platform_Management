@@ -1,4 +1,4 @@
-import type { Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
+import type { AdAccount, Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
 import { AppError } from '../../domain/errors.js';
 import type { MetaConfig } from '../../config/env.js';
 import type {
@@ -85,13 +85,30 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     return { accountId: this.config.adAccountId, accountName: account.name };
   }
 
+  /**
+   * The VND ad accounts the token's user can advertise from. The page and pixel belong to the same
+   * business, so any of them can run AdHub campaigns; other currencies are left out.
+   */
+  async listAdAccounts(): Promise<AdAccount[]> {
+    const { data } = await this.graph.get<{ data: MetaAdAccountRow[] }>('me/adaccounts', {
+      fields: 'id,name,account_status,currency,amount_spent,spend_cap',
+      limit: 50,
+    });
+    const accounts = data.filter((row) => row.currency === 'VND').map(toAdAccount);
+    if (!accounts.some((a) => a.id === this.config.adAccountId)) {
+      const own = await this.authorize();
+      accounts.unshift({ id: own.accountId, name: own.accountName, active: true, spendCap: null, amountSpent: null });
+    }
+    return accounts;
+  }
+
   async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
     const goal = AD_SET_GOALS[input.objective];
     if (goal.pixelEvent && !this.config.pixelId) {
       throw new AppError('META_PIXEL_REQUIRED', 'Mục tiêu này cần META_PIXEL_ID trong server/.env');
     }
 
-    const account = this.config.adAccountId;
+    const account = input.accountId ?? this.config.adAccountId;
     // VND has no minor unit, so Meta takes budgets in whole dong.
     const campaign = await this.graph.post<{ id: string }>(`${account}/campaigns`, {
       name: input.name,
@@ -169,6 +186,28 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     });
     return toDailyMetrics(campaign, date, data[0]);
   }
+}
+
+interface MetaAdAccountRow {
+  id: string;
+  name: string;
+  account_status: number;
+  currency: string;
+  /** Strings in the currency's minor unit; VND has none, so they are whole dong */
+  amount_spent?: string;
+  spend_cap?: string;
+}
+
+/** Meta reports "0" for an account without a spending limit. */
+function toAdAccount(row: MetaAdAccountRow): AdAccount {
+  const cap = Number(row.spend_cap ?? 0);
+  return {
+    id: row.id,
+    name: row.name,
+    active: row.account_status === ACTIVE_ACCOUNT_STATUS,
+    spendCap: cap > 0 ? cap : null,
+    amountSpent: row.amount_spent === undefined ? null : Number(row.amount_spent),
+  };
 }
 
 /** Campaigns seeded by the demo have mock ids like "fb-1a2b"; Meta ids are numeric. */

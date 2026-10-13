@@ -198,6 +198,72 @@ describe.skipIf(!mongoUp)('API with role-based access', () => {
     });
   });
 
+  describe('campaign detail and ad accounts', () => {
+    interface Option {
+      id: string;
+      current: boolean;
+      recommended: boolean;
+      fit: { eligible: boolean };
+    }
+    const facebookCampaign = async () => (await call('/campaigns?platform=facebook', { token: tokens.buyer })).body[0];
+
+    it('returns the creative, a zero-filled daily series and the ranked ad accounts', async () => {
+      const campaign = await facebookCampaign();
+      const { status, body } = await call(`/campaigns/${campaign.id}`, { token: tokens.buyer });
+      expect(status).toBe(200);
+      expect(body.campaign).toMatchObject({ id: campaign.id, connected: true });
+      expect(body.campaign.creative.headline).toBeTruthy();
+      expect(body.campaign.accountId).toMatch(/^fb-act-/);
+      expect(body.daily).toHaveLength(7);
+      const accounts = body.advice.accounts as Option[];
+      expect(accounts).toHaveLength(3);
+      expect(accounts.filter((a) => a.recommended)).toHaveLength(1);
+      expect(accounts.filter((a) => a.current)).toHaveLength(1);
+      expect(body.accountCounts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ platform: 'facebook', total: 3, active: 3 })]),
+      );
+      expect((await call(`/campaigns/${campaign.id}`, { token: tokens.client })).status).toBe(403);
+      expect((await call('/campaigns/missing-campaign', { token: tokens.buyer })).status).toBe(404);
+    });
+
+    it('duplicates a campaign into another ad account, paused, and logs it on the copy', async () => {
+      const campaign = await facebookCampaign();
+      const detail = (await call(`/campaigns/${campaign.id}`, { token: tokens.buyer })).body;
+      const target = (detail.advice.accounts as Option[]).find((a) => !a.current && a.fit.eligible)!;
+      const duplicate = (accountId: string, token = tokens.buyer) =>
+        call(`/campaigns/${campaign.id}/duplicate`, { method: 'POST', token, body: { accountId } });
+
+      const copy = await duplicate(target.id);
+      expect(copy.status).toBe(201);
+      expect(copy.body).toMatchObject({ name: campaign.name, status: 'PAUSED', accountId: target.id });
+      expect(copy.body.creative).toEqual(detail.campaign.creative);
+      const [logged] = (await call(`/activity?campaignId=${copy.body.id}`, { token: tokens.owner })).body;
+      expect(logged.message).toContain('Nhân bản');
+
+      expect((await duplicate('act_not_mine')).status).toBe(400);
+      expect((await duplicate(target.id, tokens.client)).status).toBe(403);
+    });
+
+    it('places a new campaign in the best-fitting ad account automatically', async () => {
+      const created = await call('/campaigns/unified', {
+        method: 'POST',
+        token: tokens.buyer,
+        body: {
+          name: 'Tự chọn tài khoản',
+          objective: 'leads',
+          totalDailyBudget: 500_000,
+          allocations: [{ platform: 'facebook', percent: 100 }],
+          creative: { headline: 'Đăng ký', primaryText: 'Để lại thông tin', landingUrl: 'https://example.com' },
+        },
+      });
+      expect(created.status).toBe(201);
+      const [result] = created.body.results;
+      expect(result.account.id).toMatch(/^fb-act-/);
+      expect(result.account.reason).toBeTruthy();
+      expect(result.campaign.accountId).toBe(result.account.id);
+    });
+  });
+
   describe('browser session security', () => {
     async function browserLogin(email: string) {
       const response = await fetch(`${baseUrl}/api/auth/login`, {

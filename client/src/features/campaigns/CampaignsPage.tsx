@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type MouseEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Icon } from '../../components/icons';
 import { RecommendationList } from '../../components/RecommendationList';
 import {
@@ -75,7 +75,7 @@ export function CampaignsPage() {
         icon="megaphone"
         eyebrow="Quản lý"
         title="Chiến dịch"
-        description="Mọi chiến dịch trên Facebook, TikTok và Google Ads trong một bảng — trợ lý chấm điểm và gợi ý việc cần làm cho từng dòng."
+        description="Mọi chiến dịch trên Facebook, TikTok và Google Ads trong một bảng — trợ lý chấm điểm và gợi ý việc cần làm cho từng dòng. Bấm một chiến dịch để xem bản xem trước quảng cáo và tài khoản nên chạy."
         actions={
           can('campaign:manage') && (
             <Link to="/campaigns/new" className="btn-ai">
@@ -119,6 +119,7 @@ export function CampaignsPage() {
               editable={can('campaign:manage')}
               sort={sort}
               onSort={setSort}
+              days={days}
             />
           )}
         </div>
@@ -148,14 +149,18 @@ function CampaignTable({
   editable,
   sort,
   onSort,
+  days,
 }: {
   campaigns: Campaign[];
   recommendations: readonly Recommendation[];
   editable: boolean;
   sort: SortKey;
   onSort: (sort: SortKey) => void;
+  /** Carried to the detail page so it opens on the same period */
+  days: string;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { user } = useAuth();
   // Disconnected platforms reject writes, so their rows cannot be selected.
   const selectable = campaigns.filter((c) => c.connected);
@@ -193,10 +198,11 @@ function CampaignTable({
   };
   const names = new Map(campaigns.map((c) => [c.id, c.name]));
 
+  const detailPath = (campaign: Campaign) => `/campaigns/${campaign.id}?days=${days}`;
   const onRowClick = (event: MouseEvent<HTMLTableRowElement>, campaign: Campaign) => {
     // Clicks on the row's own controls (budget editor, buttons, checkbox) keep their meaning.
-    if (!editable || !campaign.connected || (event.target as HTMLElement).closest('button, input, a, label')) return;
-    selection.toggle(campaign.id, event.shiftKey);
+    if ((event.target as HTMLElement).closest('button, input, a, label')) return;
+    navigate(detailPath(campaign));
   };
 
   return (
@@ -320,6 +326,9 @@ function CampaignTable({
                   <span className="sr-only">Thao tác</span>
                 </th>
               )}
+              <th className="table-head w-8 pl-0">
+                <span className="sr-only">Chi tiết</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -329,12 +338,8 @@ function CampaignTable({
               return (
                 <tr
                   key={c.id}
-                  className={`transition-colors ${selection.isSelected(c.id) ? 'bg-accent-soft/70' : 'hover:bg-ink/[0.02]'} ${
-                    editable && c.connected ? 'cursor-pointer' : ''
-                  }`}
+                  className={`group cursor-pointer transition-colors ${selection.isSelected(c.id) ? 'bg-accent-soft/70' : 'hover:bg-ink/[0.02]'}`}
                   onClick={(event) => onRowClick(event, c)}
-                  // Shift-click would otherwise highlight the text between the two rows.
-                  onMouseDown={(event) => event.shiftKey && event.preventDefault()}
                 >
                   {editable && (
                     <td className="table-cell w-10">
@@ -352,9 +357,13 @@ function CampaignTable({
                     <div className="flex items-center gap-3">
                       <PlatformTag platform={c.platform} compact />
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-ink" title={c.name}>
+                        <Link
+                          to={detailPath(c)}
+                          className="block truncate font-medium text-ink group-hover:text-accent"
+                          title={`${c.name} — xem chi tiết, bản xem trước và tài khoản đề xuất`}
+                        >
                           {c.name}
-                        </p>
+                        </Link>
                         {rec ? (
                           <p
                             className={`mt-0.5 flex items-center gap-1 truncate text-xs font-medium ${
@@ -419,6 +428,9 @@ function CampaignTable({
                       </button>
                     </td>
                   )}
+                  <td className="table-cell w-8 pl-0 text-subtle">
+                    <Icon name="chevronRight" size={16} className="transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
+                  </td>
                 </tr>
               );
             })}

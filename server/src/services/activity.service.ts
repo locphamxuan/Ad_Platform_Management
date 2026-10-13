@@ -29,7 +29,7 @@ export class ActivityService {
     });
   }
 
-  listRecent(limit = 100): Promise<ActivityLog[]> {
-    return this.activities.findRecent(limit);
+  listRecent(limit = 100, campaignId?: string): Promise<ActivityLog[]> {
+    return this.activities.findRecent(limit, campaignId);
   }
 }

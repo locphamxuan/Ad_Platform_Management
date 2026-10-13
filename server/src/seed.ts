@@ -4,7 +4,7 @@ import { PLATFORM_PROFILES } from './adapters/mock/platform-profiles.js';
 import type { Db } from 'mongodb';
 import { daysAgo } from './domain/dates.js';
 import { hashPassword } from './domain/password.js';
-import type { ActivityLog, Campaign, Integration, MetricDaily, Objective, Platform, Role, Rule, User } from './domain/types.js';
+import type { ActivityLog, Campaign, Creative, Integration, MetricDaily, Objective, Platform, Role, Rule, User } from './domain/types.js';
 import { COLLECTIONS, type CollectionTypes } from './db/mongo.js';
 import { SYSTEM_ACTOR } from './services/activity.service.js';
 
@@ -20,14 +20,101 @@ function mulberry32(seed: number) {
   };
 }
 
-const SEED_CAMPAIGNS: { platform: Platform; name: string; objective: Objective; budget: number }[] = [
-  { platform: 'facebook', name: 'FB - Sale cuối tuần', objective: 'sales', budget: 1_500_000 },
-  { platform: 'facebook', name: 'FB - Thu lead tư vấn', objective: 'leads', budget: 800_000 },
-  { platform: 'facebook', name: 'FB - Retargeting giỏ hàng', objective: 'sales', budget: 500_000 },
-  { platform: 'tiktok', name: 'TT - Video viral BST mới', objective: 'awareness', budget: 1_200_000 },
-  { platform: 'tiktok', name: 'TT - Livestream bán hàng', objective: 'sales', budget: 2_000_000 },
-  { platform: 'google', name: 'GG - Search thương hiệu', objective: 'traffic', budget: 600_000 },
-  { platform: 'google', name: 'GG - Performance Max', objective: 'sales', budget: 1_800_000 },
+/** Which of the platform's demo ad accounts (see mockAdAccounts) the campaign runs in. */
+type SeedAccount = 'demo' | 'scale' | 'test';
+
+const SEED_CAMPAIGNS: {
+  platform: Platform;
+  name: string;
+  objective: Objective;
+  budget: number;
+  account: SeedAccount;
+  creative: Creative;
+}[] = [
+  {
+    platform: 'facebook',
+    name: 'FB - Sale cuối tuần',
+    objective: 'sales',
+    budget: 1_500_000,
+    account: 'demo',
+    creative: {
+      headline: 'Ưu đãi cuối tuần – giảm đến 30%',
+      primaryText: 'Chỉ 2 ngày cuối tuần: giảm đến 30% cho đơn đầu tiên. Đặt ngay hôm nay để giữ ưu đãi!',
+      landingUrl: 'https://example.com/uu-dai-cuoi-tuan?utm_source=facebook&utm_medium=paid',
+    },
+  },
+  {
+    platform: 'facebook',
+    name: 'FB - Thu lead tư vấn',
+    objective: 'leads',
+    budget: 800_000,
+    account: 'scale',
+    creative: {
+      headline: 'Đăng ký tư vấn miễn phí',
+      primaryText: 'Bạn cần giải pháp phù hợp? Để lại thông tin, chuyên viên sẽ gọi lại tư vấn trong hôm nay.',
+      landingUrl: 'https://example.com/tu-van?utm_source=facebook&utm_medium=paid',
+    },
+  },
+  {
+    platform: 'facebook',
+    name: 'FB - Retargeting giỏ hàng',
+    objective: 'sales',
+    budget: 500_000,
+    account: 'demo',
+    creative: {
+      headline: 'Bạn còn sản phẩm trong giỏ hàng',
+      primaryText: 'Hoàn tất đơn hàng hôm nay để nhận miễn phí vận chuyển. Ưu đãi chỉ dành cho bạn.',
+      landingUrl: 'https://example.com/gio-hang?utm_source=facebook&utm_medium=retargeting',
+    },
+  },
+  {
+    platform: 'tiktok',
+    name: 'TT - Video viral BST mới',
+    objective: 'awareness',
+    budget: 1_200_000,
+    account: 'demo',
+    creative: {
+      headline: 'Bộ sưu tập mới đã lên kệ',
+      primaryText: 'Xem ngay những điểm mới nhất mùa này 👀 #moinhat #xuhuong',
+      landingUrl: 'https://example.com/bo-suu-tap-moi?utm_source=tiktok&utm_medium=paid',
+    },
+  },
+  {
+    platform: 'tiktok',
+    name: 'TT - Livestream bán hàng',
+    objective: 'sales',
+    budget: 2_000_000,
+    account: 'scale',
+    creative: {
+      headline: 'Livestream ưu đãi 20h tối nay',
+      primaryText: 'Hẹn bạn 20h tối nay – deal giờ vàng, quà tặng cho 100 đơn đầu tiên!',
+      landingUrl: 'https://example.com/livestream?utm_source=tiktok&utm_medium=paid',
+    },
+  },
+  {
+    platform: 'google',
+    name: 'GG - Search thương hiệu',
+    objective: 'traffic',
+    budget: 600_000,
+    account: 'demo',
+    creative: {
+      headline: 'Trang chính thức – Giao nhanh toàn quốc',
+      primaryText: 'Chính hãng, đổi trả trong 7 ngày. Xem ưu đãi mới nhất trên trang chính thức.',
+      landingUrl: 'https://example.com/?utm_source=google&utm_medium=cpc',
+    },
+  },
+  {
+    platform: 'google',
+    name: 'GG - Performance Max',
+    objective: 'sales',
+    budget: 1_800_000,
+    account: 'test',
+    creative: {
+      headline: 'Mua sắm trực tuyến – Ưu đãi hôm nay',
+      primaryText: 'Hàng mới mỗi tuần, thanh toán linh hoạt, giao nhanh. Khám phá ngay!',
+      landingUrl: 'https://example.com/san-pham?utm_source=google&utm_medium=pmax',
+    },
+  },
 ];
 
 const SEED_RULES: Omit<Rule, 'id' | 'createdAt'>[] = [
@@ -122,6 +209,8 @@ export async function seedDatabase(db: Db, passwords: SeedPasswords = {}): Promi
       platformObjective: profile.objectiveMap[seed.objective],
       status: 'ACTIVE',
       dailyBudget: seed.budget,
+      creative: seed.creative,
+      accountId: `${profile.externalIdPrefix}-act-${seed.account}`,
       createdAt: now,
     };
   });

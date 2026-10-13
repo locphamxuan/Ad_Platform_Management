@@ -6,6 +6,7 @@ import { Loading } from './components/ui';
 import { AccountPage } from './features/account/AccountPage';
 import { ActivityPage } from './features/activity/ActivityPage';
 import { LoginPage } from './features/auth/LoginPage';
+import { CampaignDetailPage } from './features/campaigns/CampaignDetailPage';
 import { CampaignsPage } from './features/campaigns/CampaignsPage';
 import { CreateCampaignPage } from './features/create-campaign/CreateCampaignPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -48,6 +49,7 @@ export function App() {
         <Route index element={guard('report:view', <DashboardPage />)} />
         <Route path="campaigns" element={guard('campaign:view', <CampaignsPage />)} />
         <Route path="campaigns/new" element={guard('campaign:manage', <CreateCampaignPage />)} />
+        <Route path="campaigns/:id" element={guard('campaign:view', <CampaignDetailPage />)} />
         <Route path="rules" element={guard('rule:view', <RulesPage />)} />
         <Route path="integrations" element={guard('integration:view', <IntegrationsPage />)} />
         <Route path="activity" element={guard('activity:view', <ActivityPage />)} />

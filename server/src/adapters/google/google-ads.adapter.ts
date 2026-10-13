@@ -1,4 +1,4 @@
-import type { Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
+import type { AdAccount, Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
 import { AppError } from '../../domain/errors.js';
 import type { GoogleAdsConfig } from '../../config/env.js';
 import type {
@@ -77,6 +77,12 @@ export class GoogleAdsAdapter implements IAdPlatformAdapter {
       throw new AppError('GOOGLE_ACCOUNT_INACTIVE', `Tài khoản Google Ads "${name}" đang không hoạt động (${customer.status})`);
     }
     return { accountId: this.config.customerId, accountName: name };
+  }
+
+  /** The configured customer only: every Google Ads request is bound to one customer id. */
+  async listAdAccounts(): Promise<AdAccount[]> {
+    const own = await this.authorize();
+    return [{ id: own.accountId, name: own.accountName, active: true, spendCap: null, amountSpent: null }];
   }
 
   async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {

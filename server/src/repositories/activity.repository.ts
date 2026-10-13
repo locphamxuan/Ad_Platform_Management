@@ -9,8 +9,10 @@ export class ActivityRepository {
     this.collection = db.collection<ActivityLog>(COLLECTIONS.activities);
   }
 
-  findRecent(limit: number): Promise<ActivityLog[]> {
-    return this.collection.find({}, WITHOUT_ID).sort({ createdAt: -1 }).limit(limit).toArray();
+  /** Newest first; `campaignId` narrows it to one campaign's history. */
+  findRecent(limit: number, campaignId?: string): Promise<ActivityLog[]> {
+    const query = campaignId ? { campaignId } : {};
+    return this.collection.find(query, WITHOUT_ID).sort({ createdAt: -1 }).limit(limit).toArray();
   }
 
   async insert(entry: ActivityLog): Promise<void> {

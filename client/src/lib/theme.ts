@@ -32,6 +32,8 @@ const readChartColors = () => ({
   surface: readColor('surface'),
   ink: readColor('ink'),
   accent: readColor('accent'),
+  spark: readColor('spark'),
+  positive: readColor('positive'),
 });
 
 /**
