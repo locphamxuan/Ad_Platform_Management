@@ -45,7 +45,7 @@ export function LoginPage() {
             phân quyền rõ ràng cho từng thành viên.
           </p>
         </div>
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-4 border-t border-white/10 pt-8 text-sm">
+        <dl className="grid grid-cols-3 gap-x-8 gap-y-4 border-t border-white/10 pt-8 text-sm">
           {ROLES.map((role) => (
             <div key={role}>
               <dt className="font-medium">{ROLE_META[role].label}</dt>
@@ -61,7 +61,7 @@ export function LoginPage() {
             AdHub<span className="text-accent">.</span>
           </p>
           <h2 className="mt-6 text-2xl font-semibold tracking-tight lg:mt-0">Đăng nhập</h2>
-          <p className="mt-2 text-sm text-muted">Dùng tài khoản được quản trị viên cấp cho bạn.</p>
+          <p className="mt-2 text-sm text-muted">Dùng tài khoản được Chủ sở hữu cấp cho bạn.</p>
 
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <Field label="Email">

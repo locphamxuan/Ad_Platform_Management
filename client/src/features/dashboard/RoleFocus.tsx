@@ -26,8 +26,12 @@ export function RoleFocus({ range }: { range: Range }) {
   const { user } = useAuth();
   if (!user) return null;
   const panels: Partial<Record<Role, ReactNode>> = {
-    owner: <OwnerFocus range={range} />,
-    admin: <AdminFocus />,
+    owner: (
+      <div className="space-y-6">
+        <OwnerFocus range={range} />
+        <OperationsFocus />
+      </div>
+    ),
     media_buyer: <BuyerFocus range={range} />,
   };
   return panels[user.role] ?? null;
@@ -69,7 +73,7 @@ function OwnerFocus({ range }: { range: Range }) {
   );
 }
 
-function AdminFocus() {
+function OperationsFocus() {
   const integrations = useQuery({ queryKey: queryKeys.integrations, queryFn: api.integrations.list });
   const users = useQuery({ queryKey: queryKeys.users, queryFn: api.users.list });
   const rules = useQuery({ queryKey: queryKeys.rules, queryFn: api.rules.list });
@@ -79,7 +83,7 @@ function AdminFocus() {
   const enabledRules = rules.data?.filter((r) => r.enabled).length ?? 0;
 
   return (
-    <FocusPanel role="admin" title="Vận hành hệ thống" link={{ to: '/integrations', label: 'Quản lý kết nối' }}>
+    <FocusPanel role="owner" title="Vận hành hệ thống" link={{ to: '/integrations', label: 'Quản lý kết nối' }}>
       <div className="grid gap-4 lg:grid-cols-3">
         <div>
           <p className="eyebrow mb-2">Kết nối nền tảng</p>

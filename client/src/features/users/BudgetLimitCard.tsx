@@ -48,7 +48,7 @@ export function BudgetLimitCard() {
         <p className="eyebrow">Chủ sở hữu</p>
         <h2 className="mt-1 section-title">Hạn mức ngân sách Media Buyer</h2>
         <p className="mt-1 text-sm text-muted">
-          Ngân sách ngày tối đa Media Buyer được đặt cho một chiến dịch. Quản trị viên và Chủ sở hữu không bị giới hạn.
+          Ngân sách ngày tối đa Media Buyer được đặt cho một chiến dịch. Chủ sở hữu không bị giới hạn.
         </p>
       </div>
       <Segmented

@@ -4,7 +4,7 @@ export type CampaignStatus = 'ACTIVE' | 'PAUSED';
 export type RuleMetric = 'cpa' | 'roas' | 'spend' | 'ctr';
 export type RuleOperator = 'gt' | 'lt';
 export type RuleActionType = 'pause' | 'activate' | 'increase_budget' | 'decrease_budget';
-export type Role = 'owner' | 'admin' | 'media_buyer' | 'client';
+export type Role = 'owner' | 'media_buyer' | 'client';
 export type Permission =
   | 'report:view'
   | 'campaign:view'

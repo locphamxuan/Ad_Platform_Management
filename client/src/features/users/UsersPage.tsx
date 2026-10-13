@@ -9,15 +9,14 @@ import { BudgetLimitCard } from './BudgetLimitCard';
 import { queryKeys } from '../../lib/query-keys';
 import type { NewUser, Role, User } from '../../lib/types';
 
-/** Mirrors the server rule for UI hints only; the server still enforces it. */
-const manageableRoles = (role: Role, governsWorkspace: boolean): Role[] =>
-  governsWorkspace ? ROLES : ROLES.slice(ROLES.indexOf(role) + 1);
+/** Mirrors the server rule for UI hints only: no role above your own. The server still enforces it. */
+const manageableRoles = (role: Role): Role[] => ROLES.slice(ROLES.indexOf(role));
 
 export function UsersPage() {
   const queryClient = useQueryClient();
   const { user: me, can } = useAuth();
   const { data, isLoading, error } = useQuery({ queryKey: queryKeys.users, queryFn: api.users.list });
-  const assignable = me ? manageableRoles(me.role, can('workspace:manage')) : [];
+  const assignable = me && can('user:manage') ? manageableRoles(me.role) : [];
 
   const refresh = () =>
     Promise.all([
@@ -129,7 +128,7 @@ function RoleGuide() {
   return (
     <section className="card-pad">
       <h2 className="section-title">Vai trò trong AdHub</h2>
-      <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2">
+      <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-3">
         {ROLES.map((role) => (
           <div key={role}>
             <dt className="text-sm font-medium">{ROLE_META[role].label}</dt>
