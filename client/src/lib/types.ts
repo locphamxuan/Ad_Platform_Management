@@ -90,9 +90,66 @@ export interface Campaign {
   status: CampaignStatus;
   dailyBudget: number;
   unifiedCampaignId?: string;
+  /** Present for campaigns created through AdHub */
+  creative?: Creative;
+  /** Ad account the campaign runs in */
+  accountId?: string;
   createdAt: string;
   connected: boolean;
   kpis: Kpis;
+}
+
+export interface Creative {
+  headline: string;
+  primaryText: string;
+  landingUrl: string;
+}
+
+/** How well an ad account suits a campaign; computed by the server's advisor. */
+export interface AccountFit {
+  accountId: string;
+  score: number;
+  eligible: boolean;
+  /** Days of the campaign's budget left before the spending limit; null = no limit */
+  runwayDays: number | null;
+  breakdown: { performance: number; runway: number; focus: number; maturity: number };
+  pros: string[];
+  cons: string[];
+}
+
+export interface AdAccountOption {
+  id: string;
+  name: string;
+  platform: Platform;
+  active: boolean;
+  spendCap: number | null;
+  amountSpent: number | null;
+  /** The account the platform was connected with */
+  primary: boolean;
+  campaigns: number;
+  activeCampaigns: number;
+  kpis: Kpis;
+  fit: AccountFit;
+  current: boolean;
+  recommended: boolean;
+}
+
+export interface DailyPoint {
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  revenue: number;
+}
+
+export interface CampaignDetail {
+  campaign: Campaign;
+  previousKpis: Kpis;
+  daily: DailyPoint[];
+  advice: { accounts: AdAccountOption[]; recommendedId: string | null; lookbackDays: number };
+  accountCounts: { platform: Platform; displayName: string; total: number; active: number }[];
+  siblings: Pick<Campaign, 'id' | 'platform' | 'name' | 'status' | 'dailyBudget'>[];
 }
 
 export interface BulkStatusResult {
@@ -157,11 +214,11 @@ export interface CreateUnifiedCampaignInput {
   objective: Objective;
   totalDailyBudget: number;
   allocations: { platform: Platform; percent: number }[];
-  creative: { headline: string; primaryText: string; landingUrl: string };
+  creative: Creative;
 }
 
 export type PlatformPublishResult =
-  | { platform: Platform; success: true; campaign: Campaign }
+  | { platform: Platform; success: true; campaign: Campaign; account?: { id: string; name: string; reason: string } }
   | { platform: Platform; success: false; error: string };
 
 export interface ActivityLog {
@@ -170,5 +227,6 @@ export interface ActivityLog {
   actorName: string;
   actorId?: string;
   message: string;
+  campaignId?: string;
   createdAt: string;
 }
