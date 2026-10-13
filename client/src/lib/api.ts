@@ -4,6 +4,7 @@ import type {
   BulkDeleteResult,
   BulkStatusResult,
   Campaign,
+  CampaignDetail,
   CampaignStatus,
   CreateUnifiedCampaignInput,
   DashboardSummary,
@@ -124,6 +125,10 @@ export const api = {
   campaigns: {
     list: (filter: DateRange & { platform?: Platform; status?: CampaignStatus }) =>
       request<Campaign[]>(`/campaigns${toQuery({ ...filter })}`),
+    detail: (id: string, range: DateRange) =>
+      request<CampaignDetail>(`/campaigns/${encodeURIComponent(id)}${toQuery({ ...range })}`),
+    duplicate: (id: string, accountId: string) =>
+      post<Campaign>(`/campaigns/${encodeURIComponent(id)}/duplicate`, { accountId }),
     update: (id: string, changes: { status?: CampaignStatus; dailyBudget?: number }) =>
       patch<Campaign>(`/campaigns/${id}`, changes),
     bulkStatus: (ids: string[], status: CampaignStatus) =>
@@ -141,6 +146,7 @@ export const api = {
   },
   activity: {
     list: () => request<ActivityLog[]>('/activity'),
+    forCampaign: (campaignId: string) => request<ActivityLog[]>(`/activity${toQuery({ campaignId, limit: '20' })}`),
   },
   notifications: {
     inbox: () => request<NotificationInbox>('/notifications'),
