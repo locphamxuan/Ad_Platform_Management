@@ -9,10 +9,13 @@ export const queryKeys = {
   activity: ['activity'] as const,
   users: ['users'] as const,
   settings: ['settings'] as const,
+  notifications: ['notifications'] as const,
 };
 
 /** Any change to campaigns, rules or integrations affects these views. */
 export const invalidateCampaignViews = (queryClient: QueryClient) =>
   Promise.all(
-    [['dashboard'], ['campaigns'], ['activity']].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+    [['dashboard'], ['campaigns'], ['activity'], ['notifications']].map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey }),
+    ),
   );

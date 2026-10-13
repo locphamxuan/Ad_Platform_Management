@@ -81,28 +81,47 @@ export function CampaignsPage() {
   );
 }
 
+/** What a bulk action did, shown above the table until dismissed. */
+interface BulkOutcome {
+  verb: string;
+  count: number;
+  errors: BulkStatusResult['errors'];
+}
+
 function CampaignTable({ campaigns, editable }: { campaigns: Campaign[]; editable: boolean }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   // Disconnected platforms reject writes, so their rows cannot be selected.
   const selectable = campaigns.filter((c) => c.connected);
   const selection = useRowSelection(selectable.map((c) => c.id));
-  const [bulkResult, setBulkResult] = useState<{ status: CampaignStatus; result: BulkStatusResult } | null>(null);
+  const [bulkResult, setBulkResult] = useState<BulkOutcome | null>(null);
 
   const update = useMutation({
     mutationFn: ({ id, changes }: { id: string; changes: { status?: CampaignStatus; dailyBudget?: number } }) =>
       api.campaigns.update(id, changes),
     onSuccess: () => invalidateCampaignViews(queryClient),
   });
+  const afterBulk = (outcome: BulkOutcome) => {
+    setBulkResult(outcome);
+    selection.clear();
+    return invalidateCampaignViews(queryClient);
+  };
   const bulk = useMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: CampaignStatus }) => api.campaigns.bulkStatus(ids, status),
-    onSuccess: (result, { status }) => {
-      setBulkResult({ status, result });
-      selection.clear();
-      return invalidateCampaignViews(queryClient);
-    },
+    onSuccess: (result, { status }) =>
+      afterBulk({ verb: status === 'ACTIVE' ? 'Đã bật' : 'Đã tạm dừng', count: result.updated, errors: result.errors }),
   });
-  const busy = update.isPending || bulk.isPending;
+  const remove = useMutation({
+    mutationFn: (ids: string[]) => api.campaigns.bulkDelete(ids),
+    onSuccess: (result) => afterBulk({ verb: 'Đã xoá', count: result.deleted, errors: result.errors }),
+  });
+  const busy = update.isPending || bulk.isPending || remove.isPending;
+
+  const confirmDelete = () => {
+    const count = selection.selected.length;
+    const message = `Xoá ${count} chiến dịch đã chọn? Chiến dịch bị xoá cả trên nền tảng quảng cáo cùng số liệu đã lưu, không thể hoàn tác.`;
+    if (confirm(message)) remove.mutate(selection.selected);
+  };
   const names = new Map(campaigns.map((c) => [c.id, c.name]));
 
   const onRowClick = (event: MouseEvent<HTMLTableRowElement>, campaign: Campaign) => {
@@ -113,22 +132,21 @@ function CampaignTable({ campaigns, editable }: { campaigns: Campaign[]; editabl
 
   return (
     <div className="space-y-3">
-      <ErrorMessage error={update.error ?? bulk.error} />
+      <ErrorMessage error={update.error ?? bulk.error ?? remove.error} />
       {bulkResult && (
         <div role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <div className="flex items-start justify-between gap-4">
             <p>
-              {bulkResult.status === 'ACTIVE' ? 'Đã bật' : 'Đã tạm dừng'}{' '}
-              <span className="font-medium tabular-nums">{bulkResult.result.updated}</span> chiến dịch
-              {bulkResult.result.errors.length > 0 && `, ${bulkResult.result.errors.length} lỗi`}.
+              {bulkResult.verb} <span className="font-medium tabular-nums">{bulkResult.count}</span> chiến dịch
+              {bulkResult.errors.length > 0 && `, ${bulkResult.errors.length} lỗi`}.
             </p>
             <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={() => setBulkResult(null)}>
               Đóng
             </button>
           </div>
-          {bulkResult.result.errors.length > 0 && (
+          {bulkResult.errors.length > 0 && (
             <ul className="mt-2 space-y-1 text-negative">
-              {bulkResult.result.errors.map((e) => (
+              {bulkResult.errors.map((e) => (
                 <li key={e.campaignId}>
                   {names.get(e.campaignId) ?? e.campaignId}: {e.message}
                 </li>
@@ -176,6 +194,14 @@ function CampaignTable({ campaigns, editable }: { campaigns: Campaign[]; editabl
                 onClick={() => bulk.mutate({ ids: selection.selected, status: 'ACTIVE' })}
               >
                 Bật tất cả
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-sm text-negative hover:bg-negative-soft hover:text-negative"
+                disabled={busy}
+                onClick={confirmDelete}
+              >
+                Xoá
               </button>
               <button type="button" className="btn-ghost btn-sm ml-auto" onClick={selection.clear}>
                 Bỏ chọn

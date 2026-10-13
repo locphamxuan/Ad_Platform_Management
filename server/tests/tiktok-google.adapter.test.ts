@@ -91,6 +91,15 @@ describe('TikTokAdsAdapter', () => {
     expect(metrics).toEqual({ campaignId: 'c1', date: '2026-10-09', spend: 120_001, impressions: 9000, clicks: 210, conversions: 4, revenue: 420_002 });
   });
 
+  it('deletes real campaigns and skips demo ones', async () => {
+    const { http, calls } = fakeHttp({ 'POST /open_api/v1.3/campaign/status/update/': ok({}) });
+    const adapter = new TikTokAdsAdapter(TIKTOK, http);
+    await adapter.deleteCampaign('tt-1a2b');
+    await adapter.deleteCampaign('1801');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body).toEqual({ advertiser_id: '700', campaign_ids: ['1801'], operation_status: 'DELETE' });
+  });
+
   it('rejects demo campaigns before calling TikTok', async () => {
     const { http, calls } = fakeHttp({});
     await expect(new TikTokAdsAdapter(TIKTOK, http).updateStatus('tt-1a2b', 'PAUSED')).rejects.toThrow(/không tồn tại trên TikTok/);
@@ -167,6 +176,15 @@ describe('GoogleAdsAdapter', () => {
     expect(calls[2].body).toEqual({
       operations: [{ update: { resourceName: 'customers/1234567890/campaignBudgets/55', amountMicros: '60000000000' }, updateMask: 'amount_micros' }],
     });
+  });
+
+  it('removes real campaigns and skips demo ones', async () => {
+    const { http, calls } = fakeHttp({ ...TOKEN, [`POST ${API}/campaigns:mutate`]: { results: [] } });
+    const adapter = new GoogleAdsAdapter(GOOGLE, http);
+    await adapter.deleteCampaign('gg-1a2b');
+    expect(calls).toHaveLength(0);
+    await adapter.deleteCampaign('777');
+    expect(calls[1].body).toEqual({ operations: [{ remove: 'customers/1234567890/campaigns/777' }] });
   });
 
   it('checks the account is enabled and in VND', async () => {

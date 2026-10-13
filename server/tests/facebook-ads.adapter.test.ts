@@ -108,6 +108,14 @@ describe('FacebookAdsAdapter', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('deletes real campaigns and skips demo ones', async () => {
+    const { http, calls } = fakeGraph({});
+    const adapter = new FacebookAdsAdapter(CONFIG, http);
+    await adapter.deleteCampaign('fb-1a2b3c');
+    await adapter.deleteCampaign('9001');
+    expect(calls).toEqual([expect.objectContaining({ method: 'DELETE', path: '9001' })]);
+  });
+
   it('checks the ad account is active and in VND when connecting', async () => {
     const usd = fakeGraph({ 'GET act_111': { name: 'Shop', currency: 'USD', account_status: 1 } });
     await expect(new FacebookAdsAdapter(CONFIG, usd.http).authorize()).rejects.toThrow(/VND/);

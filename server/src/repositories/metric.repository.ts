@@ -15,6 +15,10 @@ export class MetricRepository {
     return this.collection.find(query, WITHOUT_ID).toArray();
   }
 
+  async deleteForCampaign(campaignId: string): Promise<void> {
+    await this.collection.deleteMany({ campaignId });
+  }
+
   async upsertMany(rows: readonly MetricDaily[]): Promise<void> {
     if (rows.length === 0) return;
     await this.collection.bulkWrite(

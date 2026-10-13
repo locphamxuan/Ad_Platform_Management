@@ -1,6 +1,7 @@
 import type {
   ActivityLog,
   AuthUser,
+  BulkDeleteResult,
   BulkStatusResult,
   Campaign,
   CampaignStatus,
@@ -9,6 +10,7 @@ import type {
   Integration,
   NewRule,
   NewUser,
+  NotificationInbox,
   Platform,
   PlatformPublishResult,
   ProfileChanges,
@@ -126,6 +128,7 @@ export const api = {
       patch<Campaign>(`/campaigns/${id}`, changes),
     bulkStatus: (ids: string[], status: CampaignStatus) =>
       post<BulkStatusResult>('/campaigns/bulk-status', { ids, status }),
+    bulkDelete: (ids: string[]) => post<BulkDeleteResult>('/campaigns/bulk-delete', { ids }),
     createUnified: (input: CreateUnifiedCampaignInput) =>
       post<{ unifiedCampaignId: string; results: PlatformPublishResult[] }>('/campaigns/unified', input),
   },
@@ -138,5 +141,9 @@ export const api = {
   },
   activity: {
     list: () => request<ActivityLog[]>('/activity'),
+  },
+  notifications: {
+    inbox: () => request<NotificationInbox>('/notifications'),
+    markAllRead: () => post<void>('/notifications/read-all'),
   },
 };

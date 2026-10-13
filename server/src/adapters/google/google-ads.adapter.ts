@@ -6,6 +6,7 @@ import type {
   CreatePlatformCampaignResult,
   IAdPlatformAdapter,
 } from '../ad-platform.adapter.js';
+import { isPlatformCampaignId } from '../ad-platform.adapter.js';
 
 /** Channel and bidding per objective. Performance Max needs asset groups, so sales use Search too. */
 const CAMPAIGN_SETUP: Record<Objective, { channel: 'SEARCH' | 'DISPLAY'; bidding: Record<string, object> }> = {
@@ -128,6 +129,10 @@ export class GoogleAdsAdapter implements IAdPlatformAdapter {
       update: { resourceName: budget, amountMicros: String(dailyBudget * MICROS) },
       updateMask: 'amount_micros',
     });
+  }
+
+  async deleteCampaign(externalId: string): Promise<void> {
+    if (isPlatformCampaignId(externalId)) await this.mutate('campaigns', { remove: this.campaignResource(externalId) });
   }
 
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {

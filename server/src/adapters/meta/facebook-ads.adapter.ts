@@ -6,6 +6,7 @@ import type {
   CreatePlatformCampaignResult,
   IAdPlatformAdapter,
 } from '../ad-platform.adapter.js';
+import { isPlatformCampaignId } from '../ad-platform.adapter.js';
 import { MetaGraphClient } from './meta-graph.client.js';
 
 const OBJECTIVE_MAP: Record<Objective, string> = {
@@ -154,6 +155,11 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
 
   async updateBudget(externalId: string, dailyBudget: number): Promise<void> {
     await this.graph.post(assertMetaId(externalId), { daily_budget: dailyBudget });
+  }
+
+  async deleteCampaign(externalId: string): Promise<void> {
+    // Deleting the campaign also deletes its ad set and ad.
+    if (isPlatformCampaignId(externalId)) await this.graph.delete(externalId);
   }
 
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {

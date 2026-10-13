@@ -120,3 +120,14 @@ export interface ActivityLog {
   campaignId?: string;
   createdAt: string;
 }
+
+/** An in-app notice for one user, e.g. an owner told that a media buyer changed a campaign. */
+export interface Notification {
+  id: string;
+  recipientId: string;
+  actorName: string;
+  message: string;
+  campaignId?: string;
+  createdAt: string;
+  readAt?: string;
+}

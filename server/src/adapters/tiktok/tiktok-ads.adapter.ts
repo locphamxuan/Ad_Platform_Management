@@ -6,6 +6,7 @@ import type {
   CreatePlatformCampaignResult,
   IAdPlatformAdapter,
 } from '../ad-platform.adapter.js';
+import { isPlatformCampaignId } from '../ad-platform.adapter.js';
 
 const OBJECTIVE_MAP: Record<Objective, string> = {
   awareness: 'REACH',
@@ -99,6 +100,15 @@ export class TikTokAdsAdapter implements IAdPlatformAdapter {
       advertiser_id: this.config.advertiserId,
       campaign_id: assertTikTokId(externalId),
       budget: dailyBudget,
+    });
+  }
+
+  async deleteCampaign(externalId: string): Promise<void> {
+    if (!isPlatformCampaignId(externalId)) return;
+    await this.post('campaign/status/update/', {
+      advertiser_id: this.config.advertiserId,
+      campaign_ids: [externalId],
+      operation_status: 'DELETE',
     });
   }
 
