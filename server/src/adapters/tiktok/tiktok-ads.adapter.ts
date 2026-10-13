@@ -1,4 +1,4 @@
-import type { Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
+import type { AdAccount, Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
 import { AppError } from '../../domain/errors.js';
 import type { TikTokConfig } from '../../config/env.js';
 import type {
@@ -73,6 +73,12 @@ export class TikTokAdsAdapter implements IAdPlatformAdapter {
       throw new AppError('TIKTOK_ACCOUNT_INACTIVE', `Tài khoản TikTok "${advertiser.name}" đang không hoạt động (${advertiser.status})`);
     }
     return { accountId: this.config.advertiserId, accountName: advertiser.name };
+  }
+
+  /** The configured advertiser only: AdHub's TikTok token is scoped to one advertiser id. */
+  async listAdAccounts(): Promise<AdAccount[]> {
+    const own = await this.authorize();
+    return [{ id: own.accountId, name: own.accountName, active: true, spendCap: null, amountSpent: null }];
   }
 
   async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
