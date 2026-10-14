@@ -7,7 +7,7 @@ import type {
   IAdPlatformAdapter,
 } from '../ad-platform.adapter.js';
 import { isPlatformCampaignId } from '../ad-platform.adapter.js';
-import { MetaGraphClient } from './meta-graph.client.js';
+import { MetaApiError, MetaGraphClient } from './meta-graph.client.js';
 
 const OBJECTIVE_MAP: Record<Objective, string> = {
   awareness: 'OUTCOME_AWARENESS',
@@ -187,37 +187,56 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     return { externalId: campaign.id, platformObjective: this.mapObjective(input.objective) };
   }
 
-  /** The ad's Page post is on the timeline exactly while the campaign runs. */
+  /**
+   * Switches the campaign and its ads together, so Ads Manager shows every toggle in the same state,
+   * and keeps the ad's Page post on the timeline exactly while the campaign runs.
+   */
   async updateStatus(externalId: string, status: CampaignStatus): Promise<void> {
     const id = assertMetaId(externalId);
     if (status === 'ACTIVE') {
       // Show the post first: if it cannot go public the campaign stays paused, matching AdHub's state.
-      await this.setPagePostsVisible(id, true);
+      const ads = await this.campaignAds(id);
+      await this.setPagePostsVisible(ads.postIds, true);
+      for (const adId of ads.adIds) await this.graph.post(adId, { status });
       await this.graph.post(id, { status });
       return;
     }
-    // Stop spending first; hiding the post is the less urgent half.
+    // Stop spending before anything else; the ads' own toggles and the post are the less urgent half.
     await this.graph.post(id, { status });
     try {
-      await this.setPagePostsVisible(id, false);
+      const ads = await this.campaignAds(id);
+      for (const adId of ads.adIds) await this.graph.post(adId, { status });
+      await this.setPagePostsVisible(ads.postIds, false);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new AppError('META_POST_NOT_HIDDEN', `Đã dừng chiến dịch trên Meta nhưng chưa ẩn được bài trên Page: ${reason}`);
+      throw new AppError(
+        'META_PAUSE_INCOMPLETE',
+        `Đã dừng chiến dịch trên Meta nhưng chưa tắt hết quảng cáo hoặc chưa ẩn được bài trên Page: ${reason}`,
+      );
     }
   }
 
   /**
-   * Shows or hides the campaign's ad posts on the Page timeline. A hidden post still serves as the ad,
+   * The campaign's ads and the Page posts they run. Meta stops listing ads once their campaign is
+   * deleted, so this must be read before deleting.
+   */
+  private async campaignAds(campaignId: string): Promise<{ adIds: string[]; postIds: string[] }> {
+    const { data = [] } = await this.graph.get<{
+      data?: { id: string; creative?: { effective_object_story_id?: string } }[];
+    }>(`${campaignId}/ads`, { fields: 'id,creative{effective_object_story_id}' });
+    return {
+      adIds: data.map((ad) => ad.id),
+      postIds: [...new Set(data.map((ad) => ad.creative?.effective_object_story_id).filter((id) => id !== undefined))],
+    };
+  }
+
+  /**
+   * Shows or hides the ad posts on the Page timeline. A hidden post still serves as the ad,
    * so hiding (rather than deleting) lets the campaign be switched back on with the same post.
    * Meta refuses `is_hidden` on the Page's own posts (#100), so this goes through `timeline_visibility`:
    * "hidden" takes the post off the timeline and only "forced_allow" brings it back ("normal" fails).
    */
-  private async setPagePostsVisible(campaignId: string, visible: boolean): Promise<void> {
-    const { data = [] } = await this.graph.get<{ data?: { creative?: { effective_object_story_id?: string } }[] }>(
-      `${campaignId}/ads`,
-      { fields: 'creative{effective_object_story_id}' },
-    );
-    const postIds = [...new Set(data.map((ad) => ad.creative?.effective_object_story_id).filter((id) => id !== undefined))];
+  private async setPagePostsVisible(postIds: string[], visible: boolean): Promise<void> {
     if (postIds.length === 0) return;
 
     const page = await this.pageGraph();
@@ -239,9 +258,22 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     await this.graph.post(assertMetaId(externalId), { daily_budget: dailyBudget });
   }
 
+  /**
+   * Deleting the campaign also deletes its ad set and ad, but not the ad's Page post, so the posts
+   * go first. That order keeps a failed delete retryable: until the campaign itself is gone its posts
+   * can still be found, posts deleted on an earlier try are skipped, and deleting a campaign Meta
+   * already deleted succeeds.
+   */
   async deleteCampaign(externalId: string): Promise<void> {
-    // Deleting the campaign also deletes its ad set and ad.
-    if (isPlatformCampaignId(externalId)) await this.graph.delete(externalId);
+    if (!isPlatformCampaignId(externalId)) return;
+    const { postIds } = await this.campaignAds(externalId);
+    if (postIds.length > 0) {
+      const page = await this.pageGraph();
+      for (const postId of postIds) {
+        if (await postExists(page, postId)) await page.delete(postId);
+      }
+    }
+    await this.graph.delete(externalId);
   }
 
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {
@@ -273,6 +305,17 @@ function toAdAccount(row: MetaAdAccountRow): AdAccount {
     spendCap: cap > 0 ? cap : null,
     amountSpent: row.amount_spent === undefined ? null : Number(row.amount_spent),
   };
+}
+
+/** Meta answers #100 for a post that no longer exists; anything else is a real failure. */
+async function postExists(page: MetaGraphClient, postId: string): Promise<boolean> {
+  try {
+    await page.get(postId, { fields: 'id' });
+    return true;
+  } catch (error) {
+    if (error instanceof MetaApiError && error.metaCode === 100) return false;
+    throw error;
+  }
 }
 
 /** Campaigns seeded by the demo have mock ids like "fb-1a2b"; Meta ids are numeric. */
