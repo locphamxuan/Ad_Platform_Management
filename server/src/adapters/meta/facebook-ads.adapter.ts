@@ -49,7 +49,8 @@ interface InsightRow {
 /**
  * Real Facebook/Instagram ads through the Meta Marketing API.
  * One AdHub campaign = one Meta campaign (holding the daily budget) with one ad set and one ad,
- * so status and budget changes only ever touch the campaign object.
+ * so status and budget changes only ever touch the campaign object. The ad is a Page post that is
+ * on the Page's timeline only while the campaign runs: published when first switched on, hidden when paused.
  */
 export class FacebookAdsAdapter implements IAdPlatformAdapter {
   readonly platform = 'facebook' as const;
@@ -62,9 +63,21 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
 
   constructor(
     private readonly config: MetaConfig,
-    http: typeof fetch = fetch,
+    private readonly http: typeof fetch = fetch,
   ) {
     this.graph = new MetaGraphClient(config, http);
+  }
+
+  /** Page posts must be written with the Page's own token, which the user token can hand out. */
+  private async pageGraph(): Promise<MetaGraphClient> {
+    const page = await this.graph.get<{ access_token?: string }>(this.config.pageId, { fields: 'access_token' });
+    if (!page.access_token) {
+      throw new AppError(
+        'META_PAGE_TOKEN',
+        'Token Meta không quản lý được Page, cần quyền pages_manage_posts và vai trò quản trị trên Page',
+      );
+    }
+    return new MetaGraphClient({ ...this.config, accessToken: page.access_token }, this.http);
   }
 
   mapObjective(objective: Objective): string {
@@ -120,6 +133,8 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     });
 
+    let page: MetaGraphClient | undefined;
+    let postId: string | undefined;
     try {
       // Children start ACTIVE: the PAUSED campaign alone decides whether anything delivers.
       const adSet = await this.graph.post<{ id: string }>(`${account}/adsets`, {
@@ -138,17 +153,22 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
           : undefined,
       });
 
+      // A real Page post (not an inline "dark post"), kept hidden until the campaign is switched on;
+      // updateStatus publishes it so the ad also shows on the Page's timeline.
+      // Meta only lets verified domain owners override the link title (error #100), so the headline
+      // leads the post text and the link preview keeps the landing page's own title.
+      page = await this.pageGraph();
+      const post = await page.post<{ id: string }>(`${this.config.pageId}/feed`, {
+        message: `${input.creative.headline}\n\n${input.creative.primaryText}`,
+        link: input.creative.landingUrl,
+        call_to_action: { type: 'LEARN_MORE', value: { link: input.creative.landingUrl } },
+        published: false,
+      });
+      postId = post.id;
+
       const creative = await this.graph.post<{ id: string }>(`${account}/adcreatives`, {
         name: `${input.name} - Mẫu quảng cáo`,
-        object_story_spec: {
-          page_id: this.config.pageId,
-          link_data: {
-            link: input.creative.landingUrl,
-            message: input.creative.primaryText,
-            name: input.creative.headline,
-            call_to_action: { type: 'LEARN_MORE', value: { link: input.creative.landingUrl } },
-          },
-        },
+        object_story_id: post.id,
       });
 
       await this.graph.post(`${account}/ads`, {
@@ -158,7 +178,8 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
         status: 'ACTIVE',
       });
     } catch (error) {
-      // Don't leave a half-built campaign behind in Ads Manager.
+      // Don't leave a half-built campaign behind in Ads Manager, nor its hidden post on the Page.
+      if (page && postId) await page.delete(postId).catch(() => undefined);
       await this.graph.delete(campaign.id).catch(() => undefined);
       throw error;
     }
@@ -166,8 +187,50 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     return { externalId: campaign.id, platformObjective: this.mapObjective(input.objective) };
   }
 
+  /** The ad's Page post is on the timeline exactly while the campaign runs. */
   async updateStatus(externalId: string, status: CampaignStatus): Promise<void> {
-    await this.graph.post(assertMetaId(externalId), { status });
+    const id = assertMetaId(externalId);
+    if (status === 'ACTIVE') {
+      // Show the post first: if it cannot go public the campaign stays paused, matching AdHub's state.
+      await this.setPagePostsVisible(id, true);
+      await this.graph.post(id, { status });
+      return;
+    }
+    // Stop spending first; hiding the post is the less urgent half.
+    await this.graph.post(id, { status });
+    try {
+      await this.setPagePostsVisible(id, false);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new AppError('META_POST_NOT_HIDDEN', `Đã dừng chiến dịch trên Meta nhưng chưa ẩn được bài trên Page: ${reason}`);
+    }
+  }
+
+  /**
+   * Shows or hides the campaign's ad posts on the Page timeline. A hidden post still serves as the ad,
+   * so hiding (rather than deleting) lets the campaign be switched back on with the same post.
+   */
+  private async setPagePostsVisible(campaignId: string, visible: boolean): Promise<void> {
+    const { data = [] } = await this.graph.get<{ data?: { creative?: { effective_object_story_id?: string } }[] }>(
+      `${campaignId}/ads`,
+      { fields: 'creative{effective_object_story_id}' },
+    );
+    const postIds = [...new Set(data.map((ad) => ad.creative?.effective_object_story_id).filter((id) => id !== undefined))];
+    if (postIds.length === 0) return;
+
+    const page = await this.pageGraph();
+    for (const postId of postIds) {
+      const post = await page.get<{ is_published?: boolean; is_hidden?: boolean }>(postId, {
+        fields: 'is_published,is_hidden',
+      });
+      if (visible) {
+        if (post.is_published === false) await page.post(postId, { is_published: true });
+        if (post.is_hidden === true) await page.post(postId, { is_hidden: false });
+      } else if (post.is_published !== false && post.is_hidden !== true) {
+        // Never-published posts are already off the timeline.
+        await page.post(postId, { is_hidden: true });
+      }
+    }
   }
 
   async updateBudget(externalId: string, dailyBudget: number): Promise<void> {
