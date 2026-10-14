@@ -86,9 +86,12 @@ describe('FacebookAdsAdapter', () => {
     expect(ad).toMatchObject({ adset_id: '9002', creative: JSON.stringify({ creative_id: '9003' }) });
   });
 
-  it('publishes the hidden ad post on the Page before switching the campaign on', async () => {
+  /** The campaign's one ad, 9004, runs Page post 222_777. */
+  const ADS = { 'GET 9001/ads': { data: [{ id: '9004', creative: { effective_object_story_id: '222_777' } }] } };
+
+  it('publishes the hidden ad post, then switches the ad and the campaign on', async () => {
     const { http, calls } = fakeGraph({
-      'GET 9001/ads': { data: [{ creative: { effective_object_story_id: '222_777' } }] },
+      ...ADS,
       'GET 222': PAGE['GET 222'],
       'GET 222_777': { is_published: false },
     });
@@ -99,20 +102,29 @@ describe('FacebookAdsAdapter', () => {
       'GET 222',
       'GET 222_777',
       'POST 222_777',
+      'POST 9004',
       'POST 9001',
     ]);
     expect(calls[3].params).toMatchObject({ access_token: 'PAGE-token-0123456789', is_published: 'true' });
     expect(calls[4].params).toMatchObject({ status: 'ACTIVE' });
+    expect(calls[5].params).toMatchObject({ status: 'ACTIVE' });
   });
 
   /** A campaign whose one ad uses Page post 222_777 in the given state. */
   const withPost = (post: { is_published: boolean; is_hidden: boolean }, extra: Record<string, unknown> = {}) =>
     fakeGraph({
-      'GET 9001/ads': { data: [{ creative: { effective_object_story_id: '222_777' } }] },
+      ...ADS,
       'GET 222': PAGE['GET 222'],
       'GET 222_777': post,
       ...extra,
     });
+
+  it('pauses the campaign first, then turns its ad off too so Ads Manager shows it stopped', async () => {
+    const { http, calls } = withPost({ is_published: true, is_hidden: false });
+    await new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'PAUSED');
+    expect(calls[0]).toMatchObject({ method: 'POST', path: '9001', params: { status: 'PAUSED' } });
+    expect(calls.find((c) => c.path === '9004')).toMatchObject({ method: 'POST', params: { status: 'PAUSED' } });
+  });
   const postWrites = (calls: Call[]) => calls.filter((c) => c.method === 'POST' && c.path === '222_777').map((c) => c.params);
 
   it('leaves a post already on the timeline alone when switching on', async () => {
@@ -147,7 +159,7 @@ describe('FacebookAdsAdapter', () => {
       { 'POST 222_777': { error: { code: 200, message: 'Permissions error' } } },
     );
     await expect(new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'PAUSED')).rejects.toThrow(
-      /Đã dừng chiến dịch trên Meta nhưng chưa ẩn được bài/,
+      /Đã dừng chiến dịch trên Meta nhưng chưa tắt hết quảng cáo hoặc chưa ẩn được bài/,
     );
     expect(calls[0]).toMatchObject({ method: 'POST', path: '9001', params: { status: 'PAUSED' } });
   });
@@ -214,11 +226,41 @@ describe('FacebookAdsAdapter', () => {
   });
 
   it('deletes real campaigns and skips demo ones', async () => {
-    const { http, calls } = fakeGraph({});
+    const { http, calls } = fakeGraph({ 'GET 9001/ads': { data: [] } });
     const adapter = new FacebookAdsAdapter(CONFIG, http);
     await adapter.deleteCampaign('fb-1a2b3c');
     await adapter.deleteCampaign('9001');
-    expect(calls).toEqual([expect.objectContaining({ method: 'DELETE', path: '9001' })]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET 9001/ads', 'DELETE 9001']);
+  });
+
+  it('deletes the ad’s Page post before the campaign, which Meta leaves behind otherwise', async () => {
+    const { http, calls } = fakeGraph({ ...ADS, 'GET 222': PAGE['GET 222'], 'GET 222_777': { id: '222_777' } });
+    await new FacebookAdsAdapter(CONFIG, http).deleteCampaign('9001');
+    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.path)).toEqual(['222_777', '9001']);
+    expect(calls.find((c) => c.method === 'DELETE' && c.path === '222_777')?.params).toMatchObject({
+      access_token: 'PAGE-token-0123456789',
+    });
+  });
+
+  it('skips a post an earlier try already deleted, so a failed delete can be retried', async () => {
+    const { http, calls } = fakeGraph({
+      ...ADS,
+      'GET 222': PAGE['GET 222'],
+      'GET 222_777': { error: { code: 100, error_subcode: 33, message: 'Object does not exist' } },
+    });
+    await new FacebookAdsAdapter(CONFIG, http).deleteCampaign('9001');
+    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.path)).toEqual(['9001']);
+  });
+
+  it('keeps the campaign when its post cannot be deleted', async () => {
+    const { http, calls } = fakeGraph({
+      ...ADS,
+      'GET 222': PAGE['GET 222'],
+      'GET 222_777': { id: '222_777' },
+      'DELETE 222_777': { error: { code: 200, message: 'Permissions error' } },
+    });
+    await expect(new FacebookAdsAdapter(CONFIG, http).deleteCampaign('9001')).rejects.toThrow('Permissions error');
+    expect(calls.some((c) => c.method === 'DELETE' && c.path === '9001')).toBe(false);
   });
 
   it('checks the ad account is active and in VND when connecting', async () => {
