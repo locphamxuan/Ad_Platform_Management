@@ -43,9 +43,16 @@ const input = {
   creative: { headline: 'Giảm 50%', primaryText: 'Chỉ hôm nay', landingUrl: 'https://shop.vn' },
 };
 
+/** The Page hands out its own token, and the ad's post is created on its feed. */
+const PAGE = {
+  'GET 222': { access_token: 'PAGE-token-0123456789' },
+  'POST 222/feed': { id: '222_777' },
+};
+
 describe('FacebookAdsAdapter', () => {
-  it('builds campaign → ad set → creative → ad, with the budget on a paused campaign', async () => {
+  it('builds campaign → ad set → hidden Page post → creative → ad, with the budget on a paused campaign', async () => {
     const { http, calls } = fakeGraph({
+      ...PAGE,
       'POST act_111/campaigns': { id: '9001' },
       'POST act_111/adsets': { id: '9002' },
       'POST act_111/adcreatives': { id: '9003' },
@@ -54,27 +61,78 @@ describe('FacebookAdsAdapter', () => {
     const result = await new FacebookAdsAdapter(CONFIG, http).createCampaign(input);
 
     expect(result).toEqual({ externalId: '9001', platformObjective: 'OUTCOME_TRAFFIC' });
-    expect(calls.map((c) => c.path)).toEqual(['act_111/campaigns', 'act_111/adsets', 'act_111/adcreatives', 'act_111/ads']);
-    const [campaign, adSet, creative, ad] = calls.map((c) => c.params);
+    expect(calls.map((c) => c.path)).toEqual([
+      'act_111/campaigns',
+      'act_111/adsets',
+      '222',
+      '222/feed',
+      'act_111/adcreatives',
+      'act_111/ads',
+    ]);
+    const [campaign, adSet, , post, creative, ad] = calls.map((c) => c.params);
     expect(campaign).toMatchObject({ status: 'PAUSED', daily_budget: '100000', objective: 'OUTCOME_TRAFFIC' });
     expect(adSet).toMatchObject({ campaign_id: '9001', optimization_goal: 'LINK_CLICKS' });
     expect(adSet).not.toHaveProperty('promoted_object');
-    expect(JSON.parse(creative.object_story_spec)).toMatchObject({
-      page_id: '222',
-      link_data: { link: 'https://shop.vn', name: 'Giảm 50%', message: 'Chỉ hôm nay' },
+    expect(post).toMatchObject({
+      access_token: 'PAGE-token-0123456789',
+      published: 'false',
+      link: 'https://shop.vn',
+      message: 'Giảm 50%\n\nChỉ hôm nay',
     });
+    // Overriding the link title is reserved for verified domain owners (Meta error #100).
+    expect(post).not.toHaveProperty('name');
+    expect(creative).toMatchObject({ object_story_id: '222_777' });
+    expect(creative).not.toHaveProperty('object_story_spec');
     expect(ad).toMatchObject({ adset_id: '9002', creative: JSON.stringify({ creative_id: '9003' }) });
+  });
+
+  it('publishes the hidden ad post on the Page before switching the campaign on', async () => {
+    const { http, calls } = fakeGraph({
+      'GET 9001/ads': { data: [{ creative: { effective_object_story_id: '222_777' } }] },
+      'GET 222': PAGE['GET 222'],
+      'GET 222_777': { is_published: false },
+    });
+    await new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'ACTIVE');
+
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'GET 9001/ads',
+      'GET 222',
+      'GET 222_777',
+      'POST 222_777',
+      'POST 9001',
+    ]);
+    expect(calls[3].params).toMatchObject({ access_token: 'PAGE-token-0123456789', is_published: 'true' });
+    expect(calls[4].params).toMatchObject({ status: 'ACTIVE' });
+  });
+
+  it('leaves posts already on the Page alone and does not touch posts when pausing', async () => {
+    const active = fakeGraph({
+      'GET 9001/ads': { data: [{ creative: { effective_object_story_id: '222_777' } }] },
+      'GET 222': PAGE['GET 222'],
+      'GET 222_777': { is_published: true },
+    });
+    await new FacebookAdsAdapter(CONFIG, active.http).updateStatus('9001', 'ACTIVE');
+    expect(active.calls.some((c) => c.method === 'POST' && c.path === '222_777')).toBe(false);
+
+    const paused = fakeGraph({});
+    await new FacebookAdsAdapter(CONFIG, paused.http).updateStatus('9001', 'PAUSED');
+    expect(paused.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST 9001']);
+  });
+
+  it('explains a token that cannot manage the Page', async () => {
+    const { http } = fakeGraph({ 'POST act_111/campaigns': { id: '9001' }, 'GET 222': { id: '222' } });
+    await expect(new FacebookAdsAdapter(CONFIG, http).createCampaign(input)).rejects.toThrow(/pages_manage_posts/);
   });
 
   it('signs every call with appsecret_proof', async () => {
     const { http, calls } = fakeGraph({});
-    await new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'ACTIVE');
+    await new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'PAUSED');
     const proof = createHmac('sha256', CONFIG.appSecret).update(CONFIG.accessToken).digest('hex');
-    expect(calls[0].params).toMatchObject({ appsecret_proof: proof, status: 'ACTIVE' });
+    expect(calls[0].params).toMatchObject({ appsecret_proof: proof, status: 'PAUSED' });
   });
 
   it('tracks the pixel purchase event for sales campaigns', async () => {
-    const { http, calls } = fakeGraph({ 'POST act_111/campaigns': { id: '1' }, 'POST act_111/adsets': { id: '2' } });
+    const { http, calls } = fakeGraph({ ...PAGE, 'POST act_111/campaigns': { id: '1' }, 'POST act_111/adsets': { id: '2' } });
     await new FacebookAdsAdapter(CONFIG, http).createCampaign({ ...input, objective: 'sales' });
     expect(JSON.parse(calls[1].params.promoted_object)).toEqual({ pixel_id: '333', custom_event_type: 'PURCHASE' });
   });
@@ -95,6 +153,20 @@ describe('FacebookAdsAdapter', () => {
       'Ngân sách quá thấp: Tăng ngân sách',
     );
     expect(calls.at(-1)).toMatchObject({ method: 'DELETE', path: '9001' });
+  });
+
+  it('also deletes the hidden Page post when the ad cannot be built', async () => {
+    const { http, calls } = fakeGraph({
+      ...PAGE,
+      'POST act_111/campaigns': { id: '9001' },
+      'POST act_111/adsets': { id: '9002' },
+      'POST act_111/adcreatives': { error: { code: 100, message: 'Invalid creative' } },
+    });
+    await expect(new FacebookAdsAdapter(CONFIG, http).createCampaign(input)).rejects.toThrow('Invalid creative');
+    expect(calls.slice(-2)).toEqual([
+      expect.objectContaining({ method: 'DELETE', path: '222_777' }),
+      expect.objectContaining({ method: 'DELETE', path: '9001' }),
+    ]);
   });
 
   it('explains expired tokens', async () => {
@@ -144,9 +216,10 @@ describe('FacebookAdsAdapter', () => {
   });
 
   it('creates the campaign in the ad account it is given', async () => {
-    const { http, calls } = fakeGraph({ 'POST act_222/campaigns': { id: '1' }, 'POST act_222/adsets': { id: '2' } });
+    const { http, calls } = fakeGraph({ ...PAGE, 'POST act_222/campaigns': { id: '1' }, 'POST act_222/adsets': { id: '2' } });
     await new FacebookAdsAdapter(CONFIG, http).createCampaign({ ...input, accountId: 'act_222' });
-    expect(calls.every((c) => c.path.startsWith('act_222/'))).toBe(true);
+    const adCalls = calls.filter((c) => !c.path.startsWith('222'));
+    expect(adCalls.every((c) => c.path.startsWith('act_222/'))).toBe(true);
   });
 
   it('reads one day of insights for the campaign', async () => {
