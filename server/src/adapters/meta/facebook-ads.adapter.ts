@@ -49,8 +49,8 @@ interface InsightRow {
 /**
  * Real Facebook/Instagram ads through the Meta Marketing API.
  * One AdHub campaign = one Meta campaign (holding the daily budget) with one ad set and one ad,
- * so status and budget changes only ever touch the campaign object. The ad is a hidden Page post
- * that goes public on the Page the first time the campaign is switched on.
+ * so status and budget changes only ever touch the campaign object. The ad is a Page post that is
+ * on the Page's timeline only while the campaign runs: published when first switched on, hidden when paused.
  */
 export class FacebookAdsAdapter implements IAdPlatformAdapter {
   readonly platform = 'facebook' as const;
@@ -187,15 +187,30 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     return { externalId: campaign.id, platformObjective: this.mapObjective(input.objective) };
   }
 
+  /** The ad's Page post is on the timeline exactly while the campaign runs. */
   async updateStatus(externalId: string, status: CampaignStatus): Promise<void> {
     const id = assertMetaId(externalId);
-    // Publish first: if the post cannot go public the campaign stays paused, matching AdHub's state.
-    if (status === 'ACTIVE') await this.publishPagePosts(id);
+    if (status === 'ACTIVE') {
+      // Show the post first: if it cannot go public the campaign stays paused, matching AdHub's state.
+      await this.setPagePostsVisible(id, true);
+      await this.graph.post(id, { status });
+      return;
+    }
+    // Stop spending first; hiding the post is the less urgent half.
     await this.graph.post(id, { status });
+    try {
+      await this.setPagePostsVisible(id, false);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new AppError('META_POST_NOT_HIDDEN', `Đã dừng chiến dịch trên Meta nhưng chưa ẩn được bài trên Page: ${reason}`);
+    }
   }
 
-  /** Makes the campaign's ad posts visible on the Page; posts already public are left alone. */
-  private async publishPagePosts(campaignId: string): Promise<void> {
+  /**
+   * Shows or hides the campaign's ad posts on the Page timeline. A hidden post still serves as the ad,
+   * so hiding (rather than deleting) lets the campaign be switched back on with the same post.
+   */
+  private async setPagePostsVisible(campaignId: string, visible: boolean): Promise<void> {
     const { data = [] } = await this.graph.get<{ data?: { creative?: { effective_object_story_id?: string } }[] }>(
       `${campaignId}/ads`,
       { fields: 'creative{effective_object_story_id}' },
@@ -205,8 +220,16 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
 
     const page = await this.pageGraph();
     for (const postId of postIds) {
-      const post = await page.get<{ is_published?: boolean }>(postId, { fields: 'is_published' });
-      if (post.is_published === false) await page.post(postId, { is_published: true });
+      const post = await page.get<{ is_published?: boolean; is_hidden?: boolean }>(postId, {
+        fields: 'is_published,is_hidden',
+      });
+      if (visible) {
+        if (post.is_published === false) await page.post(postId, { is_published: true });
+        if (post.is_hidden === true) await page.post(postId, { is_hidden: false });
+      } else if (post.is_published !== false && post.is_hidden !== true) {
+        // Never-published posts are already off the timeline.
+        await page.post(postId, { is_hidden: true });
+      }
     }
   }
 

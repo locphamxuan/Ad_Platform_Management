@@ -105,18 +105,49 @@ describe('FacebookAdsAdapter', () => {
     expect(calls[4].params).toMatchObject({ status: 'ACTIVE' });
   });
 
-  it('leaves posts already on the Page alone and does not touch posts when pausing', async () => {
-    const active = fakeGraph({
+  /** A campaign whose one ad uses Page post 222_777 in the given state. */
+  const withPost = (post: { is_published: boolean; is_hidden: boolean }, extra: Record<string, unknown> = {}) =>
+    fakeGraph({
       'GET 9001/ads': { data: [{ creative: { effective_object_story_id: '222_777' } }] },
       'GET 222': PAGE['GET 222'],
-      'GET 222_777': { is_published: true },
+      'GET 222_777': post,
+      ...extra,
     });
-    await new FacebookAdsAdapter(CONFIG, active.http).updateStatus('9001', 'ACTIVE');
-    expect(active.calls.some((c) => c.method === 'POST' && c.path === '222_777')).toBe(false);
+  const postWrites = (calls: Call[]) => calls.filter((c) => c.method === 'POST' && c.path === '222_777').map((c) => c.params);
 
-    const paused = fakeGraph({});
+  it('leaves a post already on the timeline alone when switching on', async () => {
+    const { http, calls } = withPost({ is_published: true, is_hidden: false });
+    await new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'ACTIVE');
+    expect(postWrites(calls)).toEqual([]);
+  });
+
+  it('hides the post from the Page after pausing, and shows it again when switched back on', async () => {
+    const paused = withPost({ is_published: true, is_hidden: false });
     await new FacebookAdsAdapter(CONFIG, paused.http).updateStatus('9001', 'PAUSED');
-    expect(paused.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST 9001']);
+    expect(paused.calls[0]).toMatchObject({ method: 'POST', path: '9001', params: { status: 'PAUSED' } });
+    expect(postWrites(paused.calls)).toEqual([expect.objectContaining({ is_hidden: 'true' })]);
+
+    const resumed = withPost({ is_published: true, is_hidden: true });
+    await new FacebookAdsAdapter(CONFIG, resumed.http).updateStatus('9001', 'ACTIVE');
+    expect(postWrites(resumed.calls)).toEqual([expect.objectContaining({ is_hidden: 'false' })]);
+    expect(resumed.calls.at(-1)).toMatchObject({ method: 'POST', path: '9001', params: { status: 'ACTIVE' } });
+  });
+
+  it('does not touch a post that was never published when pausing', async () => {
+    const { http, calls } = withPost({ is_published: false, is_hidden: false });
+    await new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'PAUSED');
+    expect(postWrites(calls)).toEqual([]);
+  });
+
+  it('still pauses the campaign and says so when the post cannot be hidden', async () => {
+    const { http, calls } = withPost(
+      { is_published: true, is_hidden: false },
+      { 'POST 222_777': { error: { code: 200, message: 'Permissions error' } } },
+    );
+    await expect(new FacebookAdsAdapter(CONFIG, http).updateStatus('9001', 'PAUSED')).rejects.toThrow(
+      /Đã dừng chiến dịch trên Meta nhưng chưa ẩn được bài/,
+    );
+    expect(calls[0]).toMatchObject({ method: 'POST', path: '9001', params: { status: 'PAUSED' } });
   });
 
   it('explains a token that cannot manage the Page', async () => {
