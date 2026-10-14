@@ -49,6 +49,9 @@ export class DraftService {
   ) {}
 
   async listDrafts(user: PublicUser | User): Promise<CampaignDraft[]> {
+    if (user.role === 'client') {
+      throw new ForbiddenError('Tài khoản khách hàng không có quyền truy cập bản nháp chiến dịch');
+    }
     if (user.role === 'owner') {
       return this.draftRepo.findAll();
     }

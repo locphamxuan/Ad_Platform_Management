@@ -58,6 +58,15 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     res.json({ token: session.token, user: toAuthProfile(session.user, await c.settings.budgetLimitFor(session.user.role)) });
   }));
 
+  // Public media asset stream (allows <img> tags and browser previews without Bearer headers)
+  router.get('/media/:id', asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const { data, mimeType } = await c.media.getImageBuffer(id);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(data);
+  }));
+
   // Every route below requires a valid session.
   router.use(authenticate(c.auth));
 
@@ -181,13 +190,6 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
     const buffer = Buffer.from(dataBase64, 'base64');
     const asset = await c.media.upload(user.id, { fileName, data: buffer });
     res.status(201).json(asset);
-  }));
-  router.get('/media/:id', asyncHandler(async (req, res) => {
-    const { id } = idParam.parse(req.params);
-    const { data, mimeType } = await c.media.getImageBuffer(id);
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.send(data);
   }));
 
   // Meta helpers

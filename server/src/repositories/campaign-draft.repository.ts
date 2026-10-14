@@ -83,7 +83,6 @@ export class CampaignDraftRepository {
       { id },
       {
         $set: { ...changes, updatedAt: now },
-        $inc: { revision: 1 },
       },
       { ...WITHOUT_ID, returnDocument: 'after' },
     );
