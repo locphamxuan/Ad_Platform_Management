@@ -209,6 +209,8 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
   /**
    * Shows or hides the campaign's ad posts on the Page timeline. A hidden post still serves as the ad,
    * so hiding (rather than deleting) lets the campaign be switched back on with the same post.
+   * Meta refuses `is_hidden` on the Page's own posts (#100), so this goes through `timeline_visibility`:
+   * "hidden" takes the post off the timeline and only "forced_allow" brings it back ("normal" fails).
    */
   private async setPagePostsVisible(campaignId: string, visible: boolean): Promise<void> {
     const { data = [] } = await this.graph.get<{ data?: { creative?: { effective_object_story_id?: string } }[] }>(
@@ -225,10 +227,10 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
       });
       if (visible) {
         if (post.is_published === false) await page.post(postId, { is_published: true });
-        if (post.is_hidden === true) await page.post(postId, { is_hidden: false });
+        if (post.is_hidden === true) await page.post(postId, { timeline_visibility: 'forced_allow' });
       } else if (post.is_published !== false && post.is_hidden !== true) {
         // Never-published posts are already off the timeline.
-        await page.post(postId, { is_hidden: true });
+        await page.post(postId, { timeline_visibility: 'hidden' });
       }
     }
   }

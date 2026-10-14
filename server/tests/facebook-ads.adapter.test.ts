@@ -125,11 +125,13 @@ describe('FacebookAdsAdapter', () => {
     const paused = withPost({ is_published: true, is_hidden: false });
     await new FacebookAdsAdapter(CONFIG, paused.http).updateStatus('9001', 'PAUSED');
     expect(paused.calls[0]).toMatchObject({ method: 'POST', path: '9001', params: { status: 'PAUSED' } });
-    expect(postWrites(paused.calls)).toEqual([expect.objectContaining({ is_hidden: 'true' })]);
+    // is_hidden is refused on the Page's own posts; timeline_visibility is what works.
+    expect(postWrites(paused.calls)).toEqual([expect.objectContaining({ timeline_visibility: 'hidden' })]);
+    expect(postWrites(paused.calls)[0]).not.toHaveProperty('is_hidden');
 
     const resumed = withPost({ is_published: true, is_hidden: true });
     await new FacebookAdsAdapter(CONFIG, resumed.http).updateStatus('9001', 'ACTIVE');
-    expect(postWrites(resumed.calls)).toEqual([expect.objectContaining({ is_hidden: 'false' })]);
+    expect(postWrites(resumed.calls)).toEqual([expect.objectContaining({ timeline_visibility: 'forced_allow' })]);
     expect(resumed.calls.at(-1)).toMatchObject({ method: 'POST', path: '9001', params: { status: 'ACTIVE' } });
   });
 
