@@ -23,7 +23,7 @@ import { campaignHealth, recommend, typicalCpa, type Recommendation } from '../.
 import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import { useRowSelection } from '../../lib/selection';
 import { fold } from '../../lib/text';
-import type { BulkStatusResult, Campaign, CampaignStatus } from '../../lib/types';
+import type { BulkDeleteResult, BulkStatusResult, Campaign, CampaignStatus } from '../../lib/types';
 import { useDateRangeParam, useSearchParam, useTextParam } from '../../lib/url-state';
 import { BudgetEditor } from './BudgetEditor';
 import { useApplyRecommendations } from './use-apply-recommendations';
@@ -44,6 +44,8 @@ const SORT_OPTIONS = [
   { value: 'roas', label: 'ROAS cao nhất' },
 ] as const;
 type SortKey = (typeof SORT_OPTIONS)[number]['value'];
+/** Most campaign ids the bulk endpoints accept per call */
+const BULK_LIMIT = 200;
 
 export function CampaignsPage() {
   const { can, user } = useAuth();
@@ -186,16 +188,25 @@ function CampaignTable({
       afterBulk({ verb: status === 'ACTIVE' ? 'Đã bật' : 'Đã tạm dừng', count: result.updated, errors: result.errors }),
   });
   const remove = useMutation({
-    mutationFn: (ids: string[]) => api.campaigns.bulkDelete(ids),
+    mutationFn: async (ids: string[]) => {
+      // The API takes at most 200 ids per call, so "delete all" goes in chunks.
+      const total: BulkDeleteResult = { deleted: 0, errors: [] };
+      for (let i = 0; i < ids.length; i += BULK_LIMIT) {
+        const part = await api.campaigns.bulkDelete(ids.slice(i, i + BULK_LIMIT));
+        total.deleted += part.deleted;
+        total.errors.push(...part.errors);
+      }
+      return total;
+    },
     onSuccess: (result) => afterBulk({ verb: 'Đã xoá', count: result.deleted, errors: result.errors }),
   });
   const busy = update.isPending || bulk.isPending || remove.isPending || applyRec.isPending;
 
-  const confirmDelete = () => {
-    const count = selection.selected.length;
-    const message = `Xoá ${count} chiến dịch đã chọn? Chiến dịch bị xoá cả trên nền tảng quảng cáo cùng số liệu đã lưu, không thể hoàn tác.`;
-    if (confirm(message)) remove.mutate(selection.selected);
+  const confirmDelete = (ids: string[], what: string) => {
+    const message = `Xoá ${ids.length} ${what}? Chiến dịch bị xoá cả trên nền tảng quảng cáo cùng số liệu đã lưu, không thể hoàn tác.`;
+    if (confirm(message)) remove.mutate(ids);
   };
+  const platformsShown = PLATFORMS.filter((p) => selectable.some((c) => c.platform === p));
   const names = new Map(campaigns.map((c) => [c.id, c.name]));
 
   const detailPath = (campaign: Campaign) => `/campaigns/${campaign.id}?days=${days}`;
@@ -254,7 +265,7 @@ function CampaignTable({
               type="button"
               className="btn-ghost btn-sm text-negative hover:bg-negative-soft hover:text-negative"
               disabled={busy}
-              onClick={confirmDelete}
+              onClick={() => confirmDelete(selection.selected, 'chiến dịch đã chọn')}
             >
               <Icon name="trash" size={14} /> Xoá
             </button>
@@ -290,6 +301,31 @@ function CampaignTable({
                 >
                   Điểm thấp
                 </button>
+                <span className="ml-2 border-l border-line pl-3 text-muted">Xoá:</span>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm text-negative hover:bg-negative-soft hover:text-negative"
+                  disabled={busy}
+                  title="Xoá mọi chiến dịch đang hiện trong bảng (theo bộ lọc hiện tại)"
+                  onClick={() => confirmDelete(selectable.map((c) => c.id), 'chiến dịch đang hiện trong bảng')}
+                >
+                  <Icon name="trash" size={14} /> Tất cả ({selectable.length})
+                </button>
+                {platformsShown.length > 1 &&
+                  platformsShown.map((p) => {
+                    const ids = selectable.filter((c) => c.platform === p).map((c) => c.id);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        className="btn-ghost btn-sm text-negative hover:bg-negative-soft hover:text-negative"
+                        disabled={busy}
+                        onClick={() => confirmDelete(ids, `chiến dịch ${PLATFORM_META[p].label}`)}
+                      >
+                        {PLATFORM_META[p].label} ({ids.length})
+                      </button>
+                    );
+                  })}
               </>
             )}
             <div className="ml-auto min-w-0 max-w-full">
