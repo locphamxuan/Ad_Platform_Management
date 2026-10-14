@@ -249,6 +249,8 @@ export async function seedDatabase(db: Db, passwords: SeedPasswords = {}): Promi
     sessions: [],
     settings: [],
     notifications: [],
+    campaign_drafts: [],
+    media: [],
   };
   for (const [name, docs] of Object.entries(data)) {
     const collection = db.collection(name);

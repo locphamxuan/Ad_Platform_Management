@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Campaign, CampaignStatus, Creative, MetricDaily, Platform } from '../domain/types.js';
-import { ValidationError } from '../domain/errors.js';
+import { AppError, ValidationError } from '../domain/errors.js';
 import { eachDay, previousRange } from '../domain/dates.js';
 import { sumMetrics, toKpis, type Kpis } from '../domain/metrics.js';
 import { formatVnd } from '../domain/format.js';
 import type { PlatformRegistry } from '../adapters/platform-registry.js';
+import { isPlatformCampaignId } from '../adapters/ad-platform.adapter.js';
 import type { CampaignFilter, CampaignRepository } from '../repositories/campaign.repository.js';
 import type { MetricRepository } from '../repositories/metric.repository.js';
 import type { AccountAdvice, AccountAdvisorService, AccountCount } from './account-advisor.service.js';
@@ -189,8 +190,8 @@ export class CampaignService {
       creative,
       accountId: account.id,
     });
-    // A move keeps delivery going: the copy is switched on before the original is paused.
-    const takesOver = Boolean(options.move) && source.status === 'ACTIVE';
+    // A move keeps delivery going: the copy is switched on before the original is paused (except Facebook where only Meta can activate).
+    const takesOver = Boolean(options.move) && source.status === 'ACTIVE' && !(adapter.activationOnPlatformOnly || platform === 'facebook');
     if (takesOver) await adapter.updateStatus(created.externalId, 'ACTIVE');
 
     // Copies on other platforms join the source's multi-channel group, which is created if needed.
@@ -305,10 +306,55 @@ export class CampaignService {
     await this.integrations.assertConnected(campaign.platform);
     if (campaign.status === status) return { campaign, changed: false };
 
-    await this.registry.get(campaign.platform).updateStatus(campaign.externalId, status);
+    const adapter = this.registry.get(campaign.platform);
+    if (status === 'ACTIVE' && (adapter.activationOnPlatformOnly || campaign.platform === 'facebook')) {
+      throw new AppError(
+        'ACTIVATE_ON_META',
+        'Chiến dịch Facebook chỉ có thể bật chạy trong Meta Ads Manager. AdHub sẽ tự động đồng bộ trạng thái khi bạn bật trên Meta.',
+        409,
+      );
+    }
+
+    await adapter.updateStatus(campaign.externalId, status);
     const updated = await this.campaigns.update(id, { status });
     await this.activity.log(actor, `${statusVerb(status)} chiến dịch "${campaign.name}"`, id);
     return { campaign: updated, changed: true };
+  }
+
+  async refreshStatus(id: string, actor: Actor): Promise<Campaign> {
+    const campaign = await this.campaigns.getById(id);
+    const adapter = this.registry.get(campaign.platform);
+    if (adapter.fetchStatuses && isPlatformCampaignId(campaign.externalId)) {
+      const statusMap = await adapter.fetchStatuses([campaign.externalId]);
+      const info = statusMap[campaign.externalId];
+      if (info) {
+        const wasActive = campaign.status === 'ACTIVE';
+        const nowActive = info.status === 'ACTIVE';
+        const updatedMeta = {
+          ...(campaign.meta || { ads: [] }),
+          effectiveStatus: info.effectiveStatus,
+          deletedOnMeta: info.deletedOnMeta,
+          syncedAt: new Date().toISOString(),
+        };
+        const changes: Partial<Campaign> = {
+          meta: updatedMeta,
+          status: nowActive ? 'ACTIVE' : 'PAUSED',
+        };
+        if (info.dailyBudget && info.dailyBudget !== campaign.dailyBudget) {
+          changes.dailyBudget = info.dailyBudget;
+          await this.activity.log(actor, `Đồng bộ ngân sách từ Meta: ${formatVnd(info.dailyBudget)}`, id);
+        }
+        if (info.schedule) {
+          changes.schedule = info.schedule;
+        }
+        const updated = await this.campaigns.update(id, changes);
+        if (!wasActive && nowActive) {
+          await this.activity.log(actor, `Chiến dịch "${campaign.name}" đã được bật trên Meta`, id);
+        }
+        return updated;
+      }
+    }
+    return campaign;
   }
 
   async setBudget(id: string, dailyBudget: number, actor: Actor): Promise<Campaign> {

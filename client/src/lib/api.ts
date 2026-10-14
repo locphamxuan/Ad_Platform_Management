@@ -139,6 +139,32 @@ export const api = {
     bulkDelete: (ids: string[]) => post<BulkDeleteResult>('/campaigns/bulk-delete', { ids }),
     createUnified: (input: CreateUnifiedCampaignInput) =>
       post<{ unifiedCampaignId: string; results: PlatformPublishResult[] }>('/campaigns/unified', input),
+    refreshStatus: (id: string) => post<Campaign>(`/campaigns/${id}/refresh-status`),
+    cloneToDraft: (id: string) => post<import('./types').CampaignDraft>(`/campaigns/${id}/clone-to-draft`),
+  },
+  drafts: {
+    list: () => request<import('./types').CampaignDraft[]>('/campaign-drafts'),
+    get: (id: string) => request<import('./types').CampaignDraft>(`/campaign-drafts/${id}`),
+    create: (input: { step?: number; payload: Partial<import('./types').CampaignDraftPayload> }) =>
+      post<import('./types').CampaignDraft>('/campaign-drafts', input),
+    update: (id: string, input: { revision: number; step?: number; payload?: Partial<import('./types').CampaignDraftPayload> }) =>
+      put<import('./types').CampaignDraft>(`/campaign-drafts/${id}`, input),
+    delete: (id: string) => request<void>(`/campaign-drafts/${id}`, { method: 'DELETE' }),
+    check: (id: string) => post<import('./types').CheckLevelResult[]>(`/campaign-drafts/${id}/check`),
+    previews: (id: string) =>
+      post<Record<string, Array<{ placement: string; iframeHtml?: string; fallback?: boolean }>>>(`/campaign-drafts/${id}/previews`),
+    submit: (id: string) => post<Campaign>(`/campaign-drafts/${id}/submit`),
+    reconcile: (id: string) => post<import('./types').CampaignDraft>(`/campaign-drafts/${id}/reconcile`),
+  },
+  media: {
+    upload: (fileName: string, dataBase64: string) =>
+      post<import('./types').MediaAsset>('/media', { fileName, dataBase64 }),
+    imageUrl: (id: string) => `/api/media/${id}`,
+  },
+  meta: {
+    pages: () => request<import('./types').PageRef[]>('/meta/pages'),
+    locations: (q?: string) => request<import('./types').AudienceLocation[]>(`/meta/locations${toQuery({ q })}`),
+    accountHealth: () => request<{ healthy: boolean; active?: boolean; spendCapReached?: boolean; reasons?: string[] }>('/meta/account-health'),
   },
   rules: {
     list: () => request<Rule[]>('/rules'),

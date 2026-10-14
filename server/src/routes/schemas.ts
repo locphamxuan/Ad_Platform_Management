@@ -33,10 +33,12 @@ export const bulkCampaignStatusSchema = z.object({
 
 export const bulkCampaignDeleteSchema = z.object({ ids: campaignIdsSchema });
 
-const creativeSchema = z.object({
+export const creativeSchema = z.object({
   headline: z.string().trim().min(1).max(100),
   primaryText: z.string().trim().min(1).max(500),
   landingUrl: z.string().url(),
+  imageId: z.string().optional(),
+  cta: z.string().optional(),
 });
 
 export const copyCampaignSchema = z.object({
@@ -112,3 +114,65 @@ export const changePasswordSchema = z.object({
 export const updateUserSchema = z
   .object({ name: userNameSchema.optional(), role: roleSchema.optional(), active: z.boolean().optional() })
   .refine((v) => Object.values(v).some((field) => field !== undefined), 'Nothing to update');
+
+export const pageRefSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  hasInstagram: z.boolean().optional(),
+  isAdvertisingAllowed: z.boolean().optional(),
+});
+
+export const audienceLocationSchema = z.object({
+  key: z.string().min(1),
+  name: z.string().min(1),
+  type: z.string().min(1),
+});
+
+export const audienceSchema = z.object({
+  locations: z.union([z.literal('VN'), z.array(audienceLocationSchema)]),
+  ageMin: z.number().int().min(18).max(65),
+  ageMax: z.number().int().min(18).max(65),
+  genders: z.array(z.enum(['MALE', 'FEMALE'])),
+});
+
+export const campaignScheduleSchema = z.object({
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+});
+
+export const campaignDraftPayloadSchema = z.object({
+  name: z.string().trim().max(120).optional(),
+  objective: z.enum(OBJECTIVES).optional(),
+  platforms: z.array(platformSchema).min(1).optional(),
+  totalDailyBudget: z.number().int().positive().optional(),
+  allocations: z.array(z.object({ platform: platformSchema, percentage: z.number() })).optional(),
+  creative: z.object({
+    headline: z.string().trim().max(100).optional(),
+    primaryText: z.string().trim().max(500).optional(),
+    landingUrl: z.string().optional(),
+    imageId: z.string().optional(),
+    cta: z.string().optional(),
+  }).optional(),
+  pages: z.array(pageRefSchema).max(10).optional(),
+  audience: audienceSchema.optional(),
+  schedule: campaignScheduleSchema.optional(),
+  specialCategory: z.enum(['NONE', 'HOUSING']).optional(),
+  accountId: z.string().optional(),
+  acknowledgeNationwide: z.boolean().optional(),
+});
+
+export const createDraftSchema = z.object({
+  step: z.number().int().min(1).max(5).default(1),
+  payload: campaignDraftPayloadSchema.default({}),
+});
+
+export const updateDraftSchema = z.object({
+  revision: z.number().int().positive(),
+  step: z.number().int().min(1).max(5).optional(),
+  payload: campaignDraftPayloadSchema.optional(),
+});
+
+export const mediaUploadSchema = z.object({
+  fileName: z.string().min(1),
+  dataBase64: z.string().min(1),
+});

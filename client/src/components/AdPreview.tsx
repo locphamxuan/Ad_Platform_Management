@@ -67,19 +67,27 @@ interface PreviewProps {
   objective?: Objective;
   cta: string;
   brand: ReturnType<typeof brandFrom>;
+  pageName?: string;
+  imageSrc?: string;
 }
 
 export function AdPreview({
   creative,
   platforms,
+  platform,
   objective,
+  pageName,
+  imageSrc,
   title = 'Xem trước quảng cáo',
   platformOptions,
   onPlatformsChange,
 }: {
   creative: Creative;
-  platforms: readonly Platform[];
+  platforms?: readonly Platform[];
+  platform?: Platform;
   objective?: Objective;
+  pageName?: string;
+  imageSrc?: string;
   title?: string;
   /** With onPlatformsChange: the platforms the viewer may switch on and off (at least one stays on) */
   platformOptions?: readonly Platform[];
@@ -89,16 +97,21 @@ export function AdPreview({
   const [visible, setVisible] = useState(true);
   const [chosenFormat, setFormat] = useState<Format | 'all'>('all');
   const [expanded, setExpanded] = useState(false);
-  const available = placementsFor(platforms.length > 0 ? platforms : ['facebook']);
+  const activePlatforms = platforms ?? (platform ? [platform] : ['facebook']);
+  const available = placementsFor(activePlatforms.length > 0 ? activePlatforms : ['facebook']);
   const formats = FORMATS.filter((f) => f.value === 'all' || available.some((p) => p.format === f.value));
   // A format can disappear when platforms are switched off; fall back to showing everything.
   const format = formats.some((f) => f.value === chosenFormat) ? chosenFormat : 'all';
   const shown = available.filter((p) => format === 'all' || p.format === format);
+  const brand = brandFrom(creative.landingUrl);
+  if (pageName) brand.name = pageName;
   const props: PreviewProps = {
     creative,
     objective,
-    cta: CTA_BY_OBJECTIVE[objective ?? 'traffic'],
-    brand: brandFrom(creative.landingUrl),
+    cta: creative.cta ?? CTA_BY_OBJECTIVE[objective ?? 'traffic'],
+    brand,
+    pageName,
+    imageSrc,
   };
 
   useEffect(() => {
@@ -141,13 +154,13 @@ export function AdPreview({
             <div role="group" aria-label="Nền tảng xem trước" className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
               <span className="text-2xs font-semibold uppercase tracking-[0.06em] text-muted">Nền tảng</span>
               {platformOptions.map((p) => {
-                const on = platforms.includes(p);
+                const on = activePlatforms.includes(p);
                 return (
                   <button
                     key={p}
                     type="button"
                     aria-pressed={on}
-                    disabled={on && platforms.length === 1}
+                    disabled={on && activePlatforms.length === 1}
                     onClick={() =>
                       onPlatformsChange((current) =>
                         current.includes(p) ? (current.length > 1 ? current.filter((x) => x !== p) : current) : [...current, p],
@@ -267,8 +280,18 @@ function BrandAvatar({ name, size = 'h-8 w-8' }: { name: string; size?: string }
   );
 }
 
-/** The generated picture: headline on a gradient, with soft shapes so it reads as an image. */
-function Visual({ creative, brand, aspect, tall }: Pick<PreviewProps, 'creative' | 'brand'> & { aspect: string; tall?: boolean }) {
+/** The generated picture or uploaded real image. */
+function Visual({ creative, brand, aspect, tall, imageSrc }: Pick<PreviewProps, 'creative' | 'brand'> & { aspect: string; tall?: boolean; imageSrc?: string }) {
+  const src = imageSrc ?? (creative.imageId ? `/api/media/${creative.imageId}` : undefined);
+
+  if (src) {
+    return (
+      <div className={`relative overflow-hidden bg-slate-900 ${aspect}`} aria-hidden>
+        <img src={src} alt="Ad Visual" className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+
   return (
     <div className={`relative overflow-hidden bg-ai-gradient ${aspect}`} aria-hidden>
       <span className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/15" />
@@ -291,7 +314,7 @@ function Frame({ children, dark }: { children: ReactNode; dark?: boolean }) {
   );
 }
 
-function FacebookFeed({ creative, cta, brand }: PreviewProps) {
+function FacebookFeed({ creative, cta, brand, imageSrc }: PreviewProps) {
   return (
     <Frame>
       <div className="flex items-center gap-2 p-3">
@@ -308,7 +331,7 @@ function FacebookFeed({ creative, cta, brand }: PreviewProps) {
       <p className="line-clamp-3 whitespace-pre-line px-3 pb-2.5 text-xs leading-relaxed">
         {placeholder(creative.primaryText, 'Nội dung chính hiển thị ở đây…')}
       </p>
-      <Visual creative={creative} brand={brand} aspect="aspect-[1.91/1]" />
+      <Visual creative={creative} brand={brand} aspect="aspect-[1.91/1]" imageSrc={imageSrc} />
       <div className="flex items-center justify-between gap-2 bg-ink/[0.04] px-3 py-2.5">
         <div className="min-w-0">
           <p className="truncate text-[0.625rem] uppercase text-muted">{brand.domain}</p>
@@ -327,7 +350,7 @@ function FacebookFeed({ creative, cta, brand }: PreviewProps) {
   );
 }
 
-function InstagramFeed({ creative, cta, brand }: PreviewProps) {
+function InstagramFeed({ creative, cta, brand, imageSrc }: PreviewProps) {
   return (
     <Frame>
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -340,7 +363,7 @@ function InstagramFeed({ creative, cta, brand }: PreviewProps) {
         </div>
         <Icon name="more" size={16} className="text-muted" strokeWidth={3} />
       </div>
-      <Visual creative={creative} brand={brand} aspect="aspect-square" />
+      <Visual creative={creative} brand={brand} aspect="aspect-square" imageSrc={imageSrc} />
       <div className="flex items-center justify-between border-b border-line bg-accent/90 px-3 py-2 text-xs font-semibold text-white">
         {cta}
         <Icon name="chevronRight" size={14} />

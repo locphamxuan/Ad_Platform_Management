@@ -105,9 +105,15 @@ export class RuleEngineService {
       case 'pause':
         await this.campaignService.setStatus(campaign.id, 'PAUSED', actor);
         return 'Tạm dừng';
-      case 'activate':
+      case 'activate': {
+        const adapter = this.registry.get(campaign.platform);
+        if (adapter.activationOnPlatformOnly || campaign.platform === 'facebook') {
+          await this.activity.log(actor, `Bỏ qua bật chiến dịch "${campaign.name}" vì Facebook chỉ cho phép bật trên Meta Ads Manager`, campaign.id);
+          return 'Bỏ qua (chỉ bật trên Meta)';
+        }
         await this.campaignService.setStatus(campaign.id, 'ACTIVE', actor);
         return 'Bật lại';
+      }
       case 'increase_budget':
       case 'decrease_budget': {
         const { minDailyBudget } = this.registry.get(campaign.platform);

@@ -10,6 +10,53 @@ export interface Creative {
   headline: string;
   primaryText: string;
   landingUrl: string;
+  imageId?: string;
+  cta?: string;
+}
+
+export interface PageRef {
+  id: string;
+  name: string;
+  hasInstagram?: boolean;
+  isAdvertisingAllowed?: boolean;
+}
+
+export interface AudienceLocation {
+  key: string;
+  name: string;
+  type: string;
+}
+
+export interface Audience {
+  locations: AudienceLocation[] | 'VN';
+  ageMin: number;
+  ageMax: number;
+  genders: Array<'MALE' | 'FEMALE'>;
+}
+
+export interface CampaignSchedule {
+  startTime?: string;
+  endTime?: string;
+}
+
+export type SpecialCategory = 'NONE' | 'HOUSING';
+
+export interface CampaignAdMeta {
+  adId: string;
+  pageId: string;
+  creativeId?: string;
+  review?: {
+    status: string;
+    reason?: string;
+  };
+}
+
+export interface CampaignMetaInfo {
+  adSetId?: string;
+  ads: CampaignAdMeta[];
+  effectiveStatus?: string;
+  deletedOnMeta?: boolean;
+  syncedAt?: string;
 }
 
 export interface Integration {
@@ -38,6 +85,96 @@ export interface Campaign {
   accountId?: string;
   /** Set when the campaign was moved to another account: the id of the campaign that took over */
   replacedBy?: string;
+  pages?: PageRef[];
+  audience?: Audience;
+  schedule?: CampaignSchedule;
+  specialCategory?: SpecialCategory;
+  draftId?: string;
+  meta?: CampaignMetaInfo;
+  createdAt: string;
+}
+
+export type CampaignDraftState =
+  | 'DRAFT'
+  | 'SUBMITTING'
+  | 'SUBMITTED'
+  | 'PARTIAL'
+  | 'FAILED'
+  | 'UNCERTAIN'
+  | 'NEEDS_RECONCILE'
+  | 'NEEDS_REVIEW';
+
+export interface CampaignDraftPayload {
+  name: string;
+  objective: Objective;
+  platforms: Platform[];
+  totalDailyBudget: number;
+  allocations: Array<{ platform: Platform; percentage?: number; percent?: number }>;
+  creative: Creative;
+  pages: PageRef[];
+  audience: Audience;
+  schedule: CampaignSchedule;
+  specialCategory: SpecialCategory;
+  accountId?: string;
+  acknowledgeNationwide?: boolean;
+}
+
+export interface CheckLevelResult {
+  level: 'CAMPAIGN' | 'AD_SET' | 'AD_CREATIVE' | 'AD';
+  pageId?: string;
+  status: 'PASSED' | 'FAILED';
+  code?: string;
+  message?: string;
+}
+
+export interface CampaignDraftCheck {
+  revision: number;
+  at: string;
+  levels: CheckLevelResult[];
+}
+
+export interface CampaignDraftSubmission {
+  idempotencyKey: string;
+  tag: string;
+  startedAt: string;
+  results?: {
+    campaignId?: string;
+    platformIds?: Partial<Record<Platform, string>>;
+    metaCampaignId?: string;
+  };
+  error?: {
+    level?: string;
+    pageId?: string;
+    metaCode?: number | string;
+    message: string;
+    fix?: string;
+  };
+}
+
+export interface CampaignDraft {
+  id: string;
+  ownerId: string;
+  revision: number;
+  state: CampaignDraftState;
+  step: number;
+  payload: CampaignDraftPayload;
+  check?: CampaignDraftCheck;
+  submission?: CampaignDraftSubmission;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  ownerId: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  width: number;
+  height: number;
+  sha256: string;
+  metaHashes: Record<string, string>;
+  data?: string;
   createdAt: string;
 }
 

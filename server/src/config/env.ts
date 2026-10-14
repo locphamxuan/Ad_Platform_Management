@@ -54,7 +54,7 @@ const metaSchema = z.object({
       .regex(/^(act_)?\d+$/, 'META_AD_ACCOUNT_ID must be the ad account number, with or without act_')
       .transform((id) => (id.startsWith('act_') ? id : `act_${id}`)),
   ),
-  META_PAGE_ID: required(numericId('META_PAGE_ID')),
+  META_PAGE_ID: optional(numericId('META_PAGE_ID')),
   META_PIXEL_ID: optional(numericId('META_PIXEL_ID')),
   META_API_VERSION: optional(z.string().trim().regex(/^v\d+\.\d+$/, 'META_API_VERSION must look like v23.0')),
 });
@@ -63,7 +63,7 @@ export type MetaConfig = {
   accessToken: string;
   appSecret: string;
   adAccountId: string;
-  pageId: string;
+  pageId?: string;
   pixelId?: string;
   apiVersion: string;
 };

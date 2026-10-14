@@ -9,6 +9,8 @@ import type {
   Session,
   User,
   WorkspaceSettings,
+  CampaignDraft,
+  MediaAsset,
 } from '../domain/types.js';
 
 export const COLLECTIONS = {
@@ -21,6 +23,8 @@ export const COLLECTIONS = {
   sessions: 'sessions',
   settings: 'settings',
   notifications: 'notifications',
+  campaign_drafts: 'campaign_drafts',
+  media: 'media',
 } as const;
 
 export interface CollectionTypes {
@@ -33,6 +37,8 @@ export interface CollectionTypes {
   sessions: Session;
   settings: WorkspaceSettings;
   notifications: Notification;
+  campaign_drafts: CampaignDraft;
+  media: MediaAsset;
 }
 
 /** Excludes Mongo's internal _id so domain objects stay storage-agnostic. */
@@ -74,5 +80,10 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection(COLLECTIONS.sessions).createIndex({ userId: 1 }),
     // TTL index: MongoDB deletes expired sessions by itself.
     db.collection(COLLECTIONS.sessions).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection(COLLECTIONS.campaign_drafts).createIndex({ id: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.campaign_drafts).createIndex({ ownerId: 1 }),
+    db.collection(COLLECTIONS.campaign_drafts).createIndex({ state: 1 }),
+    db.collection(COLLECTIONS.media).createIndex({ id: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.media).createIndex({ sha256: 1 }),
   ]);
 }

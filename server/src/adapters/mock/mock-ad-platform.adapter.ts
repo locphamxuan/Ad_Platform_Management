@@ -1,9 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import type { AdAccount, Campaign, CampaignStatus, MetricDaily, Objective, Platform } from '../../domain/types.js';
 import type {
+  AdAccount,
+  Campaign,
+  CampaignSchedule,
+  CampaignStatus,
+  CheckLevelResult,
+  Creative,
+  MetricDaily,
+  Objective,
+  PageRef,
+  Platform,
+} from '../../domain/types.js';
+import type {
+  AccountHealthResult,
   CreatePlatformCampaignInput,
   CreatePlatformCampaignResult,
   IAdPlatformAdapter,
+  LocationSearchResult,
+  StatusFetchResult,
 } from '../ad-platform.adapter.js';
 
 export interface MockPlatformProfile {
@@ -19,12 +33,24 @@ export interface MockPlatformProfile {
   avgOrderValue: number;
 }
 
+const MOCK_PROVINCES: LocationSearchResult[] = [
+  { key: '3824', name: 'Hà Nội', type: 'region' },
+  { key: '3825', name: 'Hồ Chí Minh', type: 'region' },
+  { key: '3826', name: 'Đà Nẵng', type: 'city' },
+  { key: '3827', name: 'Cần Thơ', type: 'city' },
+  { key: '3828', name: 'Hải Phòng', type: 'city' },
+  { key: '3829', name: 'Bình Dương', type: 'region' },
+  { key: '3830', name: 'Đồng Nai', type: 'region' },
+  { key: '3831', name: 'Khánh Hòa', type: 'region' },
+];
+
 /** Simulates a platform API so the product works end-to-end before API approval. */
 export class MockAdPlatformAdapter implements IAdPlatformAdapter {
   readonly platform: Platform;
   readonly displayName: string;
   readonly live = false;
   readonly minDailyBudget: number;
+  readonly activationOnPlatformOnly: boolean;
 
   constructor(
     private readonly profile: MockPlatformProfile,
@@ -33,6 +59,7 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
     this.platform = profile.platform;
     this.displayName = profile.displayName;
     this.minDailyBudget = profile.minDailyBudget;
+    this.activationOnPlatformOnly = profile.platform === 'facebook';
   }
 
   mapObjective(objective: Objective): string {
@@ -48,10 +75,114 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
     return mockAdAccounts(this.profile);
   }
 
-  async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
+  async listPages(): Promise<PageRef[]> {
+    return [
+      { id: 'mock_page_1', name: 'AdHub Official Fanpage', hasInstagram: true, isAdvertisingAllowed: true },
+      { id: 'mock_page_2', name: 'AdHub Thương Mại & Dịch Vụ', hasInstagram: false, isAdvertisingAllowed: true },
+      { id: 'mock_page_blocked', name: 'Trang Không Hợp Lệ (Demo Lỗi)', hasInstagram: false, isAdvertisingAllowed: false },
+    ];
+  }
+
+  async searchLocations(query: string): Promise<LocationSearchResult[]> {
+    const q = query.trim().toLowerCase();
+    if (!q) return MOCK_PROVINCES;
+    return MOCK_PROVINCES.filter((p) => p.name.toLowerCase().includes(q));
+  }
+
+  async accountHealth(): Promise<AccountHealthResult> {
     return {
-      externalId: `${this.profile.externalIdPrefix}-${randomUUID().slice(0, 12)}`,
+      healthy: true,
+      currency: 'VND',
+      active: true,
+      spendCapReached: false,
+      balanceIssue: false,
+      reasons: [],
+    };
+  }
+
+  async validateCampaign(input: CreatePlatformCampaignInput): Promise<CheckLevelResult[]> {
+    const results: CheckLevelResult[] = [];
+
+    // Campaign level
+    results.push({ level: 'CAMPAIGN', status: 'PASSED' });
+
+    // Ad Set level
+    if (input.audience && input.audience.ageMin > input.audience.ageMax) {
+      results.push({
+        level: 'AD_SET',
+        status: 'FAILED',
+        code: 'INVALID_AGE_RANGE',
+        message: 'Độ tuổi tối thiểu lớn hơn độ tuổi tối đa',
+      });
+    } else {
+      results.push({ level: 'AD_SET', status: 'PASSED' });
+    }
+
+    // Creative & Ad levels per page
+    const pages = input.pages && input.pages.length > 0
+      ? input.pages
+      : [{ id: 'mock_page_1', name: 'AdHub Official Fanpage' }];
+
+    for (const page of pages) {
+      if (page.id === 'mock_page_blocked' || page.isAdvertisingAllowed === false) {
+        results.push({
+          level: 'AD_CREATIVE',
+          pageId: page.id,
+          status: 'FAILED',
+          code: 'META_PAGE_RESTRICTED',
+          message: `[${page.name}] Trang này bị hạn chế quảng cáo hoặc chưa được xuất bản.`,
+        });
+        results.push({
+          level: 'AD',
+          pageId: page.id,
+          status: 'FAILED',
+          code: 'META_PAGE_RESTRICTED',
+          message: `[${page.name}] Trang không đủ điều kiện phân phối quảng cáo.`,
+        });
+      } else {
+        results.push({ level: 'AD_CREATIVE', pageId: page.id, status: 'PASSED' });
+        results.push({ level: 'AD', pageId: page.id, status: 'PASSED' });
+      }
+    }
+
+    return results;
+  }
+
+  async previewAd(_input: { pageId: string; creative: Creative; adFormat?: string }): Promise<{ iframeHtml?: string; fallback?: boolean }> {
+    return { fallback: true };
+  }
+
+  async findByTag(tag: string): Promise<{ campaignId: string; status: string; adCount: number } | null> {
+    return { campaignId: `${this.profile.externalIdPrefix}-${tag}`, status: 'PAUSED', adCount: 1 };
+  }
+
+  async readBack(campaignId: string): Promise<{ campaignId: string; status: string; pages: string[]; schedule?: CampaignSchedule; adCount: number } | null> {
+    return {
+      campaignId,
+      status: 'PAUSED',
+      pages: ['mock_page_1'],
+      adCount: 1,
+    };
+  }
+
+  async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
+    const externalId = `${this.profile.externalIdPrefix}-${randomUUID().slice(0, 12)}`;
+    const pages = input.pages && input.pages.length > 0
+      ? input.pages
+      : [{ id: 'mock_page_1', name: 'Default Fanpage' }];
+
+    return {
+      externalId,
       platformObjective: this.mapObjective(input.objective),
+      meta: {
+        adSetId: `mock-adset-${randomUUID().slice(0, 8)}`,
+        ads: pages.map((p) => ({
+          adId: `mock-ad-${randomUUID().slice(0, 8)}`,
+          pageId: p.id,
+          creativeId: `mock-creative-${randomUUID().slice(0, 8)}`,
+          review: { status: 'PENDING' },
+        })),
+      },
     };
   }
 
@@ -60,6 +191,18 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
   async updateBudget(_externalId: string, _dailyBudget: number): Promise<void> {}
 
   async deleteCampaign(_externalId: string): Promise<void> {}
+
+  async fetchStatuses(campaignIds: string[]): Promise<Record<string, StatusFetchResult>> {
+    const map: Record<string, StatusFetchResult> = {};
+    for (const id of campaignIds) {
+      map[id] = {
+        status: 'PAUSED',
+        effectiveStatus: 'PAUSED',
+        reviewStatus: 'APPROVED',
+      };
+    }
+    return map;
+  }
 
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {
     return simulateDailyMetrics(this.profile, campaign.id, campaign.dailyBudget, date, this.random);

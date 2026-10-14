@@ -1,587 +1,466 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { AdPreview } from '../../components/AdPreview';
-import { Icon } from '../../components/icons';
-import { AiBadge, ErrorMessage, Field, PageHeader, PlatformTag, ScoreRing, Tag } from '../../components/ui';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { allocateBudget, rebalance, splitEvenly } from '../../lib/budget';
-import { BUDGET_STEP, OBJECTIVE_LABELS, PLATFORM_META, PLATFORMS } from '../../lib/constants';
-import { formatDecimal, formatVnd, lastNDays } from '../../lib/format';
-import { suggestAllocation } from '../../lib/insights';
-import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
-import type { CreateUnifiedCampaignInput, Objective, Platform, PlatformPublishResult } from '../../lib/types';
-import { useTextParam } from '../../lib/url-state';
-import { suggestCampaign, TEMPLATES } from './autofill';
+import type { Campaign, CampaignDraft, CampaignDraftPayload } from '../../lib/types';
 import {
-  campaignNameFor,
-  generateCreatives,
-  parseBrief,
-  reviewCreative,
-  slugify,
-  withUtm,
-  type CreativeVariant,
-} from './brief';
+  validateStep1,
+  validateStep2,
+  validateStep3,
+  validateStep4,
+} from '../../lib/draft-validation';
+import { GoalStep } from './steps/GoalStep';
+import { ContentStep } from './steps/ContentStep';
+import { AudienceStep } from './steps/AudienceStep';
+import { BudgetScheduleStep } from './steps/BudgetScheduleStep';
+import { ReviewStep } from './steps/ReviewStep';
+import { generateCreatives, parseBrief } from './brief';
+import { suggestCampaign, TEMPLATES } from './autofill';
 
-/** Selected platforms and their share of the total; a platform is selected when it has a key. */
-type Shares = Partial<Record<Platform, number>>;
-
-const BUDGET_PRESETS = [500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000];
-/** How far back the smart split looks at each platform's ROAS. */
-const PERFORMANCE_DAYS = 30;
-
-/** One example per kind of advertiser: AdHub is not tied to any industry. */
-const BRIEF_EXAMPLES = [
-  'Giảm 30% gói chăm sóc da dịp 20/10, ngân sách 2 triệu/ngày',
-  'Thu thập đăng ký tư vấn khoá học IELTS, 1 triệu/ngày',
-  'Ra mắt ứng dụng đặt lịch khám, ngân sách 3tr',
-  'Tăng nhận diện thương hiệu cá nhân kênh nấu ăn, 500k/ngày',
+const STEPS = [
+  { step: 1, title: 'Mục tiêu & Kênh' },
+  { step: 2, title: 'Nội dung & Trang' },
+  { step: 3, title: 'Đối tượng' },
+  { step: 4, title: 'Ngân sách & Lịch' },
+  { step: 5, title: 'Xác minh & Tạo' },
 ];
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
-const isWebUrl = (value: string) => {
-  try {
-    return ['http:', 'https:'].includes(new URL(value).protocol) && new URL(value).hostname.includes('.');
-  } catch {
-    return false;
-  }
+const DEFAULT_PAYLOAD: CampaignDraftPayload = {
+  name: '',
+  objective: 'traffic',
+  platforms: ['facebook'],
+  totalDailyBudget: 500_000,
+  allocations: [{ platform: 'facebook', percentage: 100 }],
+  creative: {
+    headline: '',
+    primaryText: '',
+    landingUrl: 'https://',
+    cta: 'LEARN_MORE',
+  },
+  pages: [],
+  audience: {
+    locations: 'VN',
+    ageMin: 18,
+    ageMax: 65,
+    genders: ['MALE', 'FEMALE'],
+  },
+  schedule: {},
+  specialCategory: 'NONE',
+  acknowledgeNationwide: false,
 };
 
 export function CreateCampaignPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const integrations = useQuery({ queryKey: queryKeys.integrations, queryFn: api.integrations.list });
-  const performanceRange = lastNDays(PERFORMANCE_DAYS);
-  const performance = useQuery({
-    queryKey: queryKeys.dashboard(performanceRange.from, performanceRange.to),
-    queryFn: () => api.dashboard.summary(performanceRange),
-  });
-  const [briefParam] = useTextParam('brief');
-  const [briefText, setBriefText] = useState(briefParam);
-  const [name, setName] = useState('');
-  const [objective, setObjective] = useState<Objective>('sales');
-  const [totalDailyBudget, setTotalDailyBudget] = useState(1_000_000);
-  // null = untouched: follow the default below, which waits for the integration list.
-  const [chosenShares, setShares] = useState<Shares | null>(null);
-  const [creative, setCreative] = useState({ headline: '', primaryText: '', landingUrl: 'https://' });
-  const [variants, setVariants] = useState<CreativeVariant[]>([]);
-  const [aiNote, setAiNote] = useState<string | null>(null);
-  // Random first template so repeated demos differ; each autofill then cycles through the rest.
-  const [nextTemplate, setNextTemplate] = useState(() => Math.floor(Math.random() * TEMPLATES.length));
 
-  const create = useMutation({
-    mutationFn: (input: CreateUnifiedCampaignInput) => api.campaigns.createUnified(input),
-    onSuccess: () => invalidateCampaignViews(queryClient),
-  });
+  const urlDraftId = searchParams.get('draft');
+  const urlStep = Number(searchParams.get('step')) || 1;
 
-  const connected = new Set(integrations.data?.filter((i) => i.connected).map((i) => i.platform));
-  const minBudget = new Map(integrations.data?.map((i) => [i.platform, i.minDailyBudget]));
-  const limit = user?.dailyBudgetLimit ?? null;
-  const roasByPlatform = new Map(
-    performance.data?.byPlatform.filter((p) => p.kpis.spend > 0).map((p) => [p.platform, p.kpis.roas]),
-  );
+  const [currentStep, setCurrentStep] = useState<number>(urlStep >= 1 && urlStep <= 5 ? urlStep : 1);
+  const [draft, setDraft] = useState<CampaignDraft | null>(null);
+  const [payload, setPayload] = useState<CampaignDraftPayload>(DEFAULT_PAYLOAD);
+  const [stepErrors, setStepErrors] = useState<Record<string, string>>({});
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  // Start with every connected platform, split evenly, so most campaigns need no clicks here at all.
-  const connectedPlatforms = PLATFORMS.filter((p) => connected.has(p));
-  const defaultPlatforms = connectedPlatforms.length > 0 ? connectedPlatforms : PLATFORMS;
-  const shares = chosenShares ?? splitEvenly(defaultPlatforms);
-  const selected = PLATFORMS.filter((p) => shares[p] !== undefined);
-  const percentOf = (p: Platform) => shares[p] ?? 0;
-  const percentSum = selected.reduce((sum, p) => sum + percentOf(p), 0);
-  const budgets = new Map(
-    allocateBudget(
-      totalDailyBudget,
-      selected.map((platform) => ({ platform, percent: percentOf(platform) })),
-    ).map((a) => [a.platform, a.dailyBudget]),
-  );
+  // AI Brief & Template autofill states
+  const [briefInput, setBriefInput] = useState('');
+  const [isAiBriefOpen, setIsAiBriefOpen] = useState(false);
+  const [templateIndex, setTemplateIndex] = useState(() => Math.floor(Math.random() * TEMPLATES.length));
 
-  // The server rejects the whole request for these, so block them here with a clear reason.
-  const allocationProblem =
-    selected.length === 0
-      ? 'Chọn ít nhất một nền tảng.'
-      : percentSum !== 100
-        ? 'Tỉ lệ phân bổ của các nền tảng đã chọn phải bằng đúng 100%.'
-        : selected.some((p) => percentOf(p) <= 0)
-          ? 'Mỗi nền tảng đã chọn cần tỉ lệ lớn hơn 0%; bỏ chọn nền tảng không dùng.'
-          : limit !== null && selected.some((p) => (budgets.get(p) ?? 0) > limit)
-            ? `Mỗi kênh tối đa ${formatVnd(limit)}/ngày theo hạn mức của bạn.`
-            : null;
-  const isAllocationValid = allocationProblem === null;
-  const review = reviewCreative(creative);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  /** Adding or removing a platform re-splits evenly; fine-tune afterwards if needed. */
-  const togglePlatform = (platform: Platform) =>
-    setShares(splitEvenly(PLATFORMS.filter((p) => (p === platform ? shares[p] === undefined : shares[p] !== undefined))));
-  const setPercent = (platform: Platform, percent: number) => setShares(rebalance(shares, platform, percent));
-
-  /** Fills every field with a ready-to-submit campaign; each click moves on to the next template. */
-  const autofill = () => {
-    const draft = suggestCampaign({ index: nextTemplate, now: new Date(), platforms: defaultPlatforms, minBudget, limit });
-    setName(draft.name);
-    setObjective(draft.objective);
-    setTotalDailyBudget(draft.totalDailyBudget);
-    setCreative(draft.creative);
-    setVariants([]);
-    setShares(null);
-    setAiNote(null);
-    create.reset();
-    setNextTemplate((index) => index + 1);
-  };
-
-  /** Reads the one-line brief and drafts the whole campaign from it. */
-  const draftFromBrief = (text: string) => {
-    if (!text.trim()) return;
-    const brief = parseBrief(text);
-    const now = new Date();
-    const slug = `${slugify(brief.occasion ?? brief.product)}-${pad(now.getDate())}${pad(now.getMonth() + 1)}`;
-    const generated = generateCreatives(brief);
-    // Money follows results when there is history to go on; otherwise the even default stays.
-    const smart = roasByPlatform.size > 0 && defaultPlatforms.length > 1;
-    setName(campaignNameFor(brief, now));
-    setObjective(brief.objective);
-    if (brief.totalDailyBudget) setTotalDailyBudget(brief.totalDailyBudget);
-    setVariants(generated);
-    // The advertiser's own site: from the brief, else whatever valid link is already in the field.
-    const site = brief.landingUrl ?? (isWebUrl(creative.landingUrl) ? creative.landingUrl : null);
-    setCreative({
-      headline: generated[0].headline,
-      primaryText: generated[0].primaryText,
-      landingUrl: site ? withUtm(site, slug) : 'https://',
+  // Sync step to URL
+  const setStep = (step: number) => {
+    setCurrentStep(step);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('step', String(step));
+      return next;
     });
-    setShares(smart ? suggestAllocation(defaultPlatforms, roasByPlatform) : null);
-    setAiNote(
-      [
-        `Mục tiêu: ${OBJECTIVE_LABELS[brief.objective]}`,
-        brief.totalDailyBudget ? `ngân sách ${formatVnd(brief.totalDailyBudget)}/ngày` : 'giữ ngân sách hiện tại',
-        smart ? `chia kênh theo ROAS ${PERFORMANCE_DAYS} ngày` : 'chia đều các kênh',
-        site ? 'gắn UTM vào link của bạn' : 'nhập link đích của bạn, UTM sẽ tự gắn',
-      ].join(' · '),
-    );
-    create.reset();
   };
 
-  // A brief handed over from the assistant box (?brief=…) is drafted once, when the data it needs is in.
-  const draftedFromUrl = useRef(false);
+  // Load existing draft if ID in URL
+  const draftQuery = useQuery({
+    queryKey: ['campaign-drafts', urlDraftId],
+    queryFn: () => (urlDraftId ? api.drafts.get(urlDraftId) : null),
+    enabled: Boolean(urlDraftId),
+  });
+
   useEffect(() => {
-    if (draftedFromUrl.current || !briefParam || !integrations.isFetched || !performance.isFetched) return;
-    draftedFromUrl.current = true;
-    draftFromBrief(briefParam);
-    // draftFromBrief reads the latest render's data on purpose; it is not a dependency.
-  }, [briefParam, integrations.isFetched, performance.isFetched]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (draftQuery.data) {
+      setDraft(draftQuery.data);
+      setPayload(draftQuery.data.payload);
+      if (urlStep) setCurrentStep(urlStep);
+    }
+  }, [draftQuery.data, urlStep]);
 
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    create.mutate({
-      name,
-      objective,
-      totalDailyBudget,
-      allocations: selected.map((platform) => ({ platform, percent: percentOf(platform) })),
-      creative,
-    });
+  // Autosave payload to server (debounce 1.5s) and localStorage
+  const triggerAutosave = (newPayload: CampaignDraftPayload, stepNum = currentStep) => {
+    setSaveStatus('saving');
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        if (!draft) {
+          // Create draft on server
+          const created = await api.drafts.create({
+            step: stepNum,
+            payload: newPayload,
+          });
+          setDraft(created);
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set('draft', created.id);
+            next.set('step', String(stepNum));
+            return next;
+          });
+          localStorage.setItem(`adhub_draft_${created.id}`, JSON.stringify(newPayload));
+        } else {
+          // Update existing draft
+          const updated = await api.drafts.update(draft.id, {
+            revision: draft.revision,
+            step: stepNum,
+            payload: newPayload,
+          });
+          setDraft(updated);
+          localStorage.setItem(`adhub_draft_${draft.id}`, JSON.stringify(newPayload));
+        }
+        setSaveStatus('saved');
+        const now = new Date();
+        setLastSavedAt(now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }));
+      } catch (err) {
+        console.error('Autosave error:', err);
+        setSaveStatus('error');
+      }
+    }, 1500);
   };
 
-  const rewriteCopy = () => {
-    const generated = generateCreatives({ ...parseBrief(briefText.trim() || name), objective });
-    setVariants(generated);
-    setCreative((c) => ({ ...c, headline: generated[0].headline, primaryText: generated[0].primaryText }));
+  const updatePayload = (patch: Partial<CampaignDraftPayload>) => {
+    setPayload((prev) => {
+      const next = { ...prev, ...patch };
+      triggerAutosave(next, currentStep);
+      return next;
+    });
+    setStepErrors({});
+  };
+
+  // AI Brief Quick Fill
+  const handleApplyBrief = () => {
+    if (!briefInput.trim()) return;
+    const brief = parseBrief(briefInput);
+    const variants = generateCreatives(brief);
+    const variant = variants[0];
+    const newPayload: CampaignDraftPayload = {
+      ...payload,
+      name: `${brief.product} ${new Date().toLocaleDateString('vi-VN')}`,
+      objective: brief.objective,
+      totalDailyBudget: brief.totalDailyBudget ?? payload.totalDailyBudget,
+      creative: {
+        headline: variant ? variant.headline : payload.creative.headline,
+        primaryText: variant ? variant.primaryText : payload.creative.primaryText,
+        landingUrl: brief.landingUrl ?? payload.creative.landingUrl,
+        cta: payload.creative.cta ?? 'LEARN_MORE',
+      },
+    };
+    updatePayload(newPayload);
+    setIsAiBriefOpen(false);
+    setBriefInput('');
+  };
+
+  // Autofill Template
+  const handleAutofillTemplate = () => {
+    const suggested = suggestCampaign({
+      index: templateIndex,
+      now: new Date(),
+      platforms: payload.platforms,
+      minBudget: new Map(),
+      limit: null,
+    });
+    setTemplateIndex((prev) => (prev + 1) % TEMPLATES.length);
+    const newPayload: CampaignDraftPayload = {
+      ...payload,
+      name: suggested.name,
+      objective: suggested.objective,
+      totalDailyBudget: suggested.totalDailyBudget,
+      creative: {
+        headline: suggested.creative.headline,
+        primaryText: suggested.creative.primaryText,
+        landingUrl: suggested.creative.landingUrl,
+        cta: payload.creative.cta ?? 'LEARN_MORE',
+      },
+    };
+    updatePayload(newPayload);
+  };
+
+  // Step Navigation & Validation
+  const handleNext = () => {
+    let result = { valid: true, errors: {} as Record<string, string> };
+    if (currentStep === 1) result = validateStep1(payload);
+    else if (currentStep === 2) result = validateStep2(payload);
+    else if (currentStep === 3) result = validateStep3(payload);
+    else if (currentStep === 4) result = validateStep4(payload);
+
+    if (!result.valid) {
+      setStepErrors(result.errors);
+      return;
+    }
+
+    setStepErrors({});
+    if (currentStep < 5) {
+      setStep(currentStep + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep > 1) {
+      setStepErrors({});
+      setStep(currentStep - 1);
+    }
+  };
+
+  const handleSubmitted = (campaign: Campaign) => {
+    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+    queryClient.invalidateQueries({ queryKey: ['campaign-drafts'] });
+    navigate(`/campaigns/${campaign.id}`);
   };
 
   return (
-    <>
-      <PageHeader
-        icon="wand"
-        eyebrow="Tạo một lần, chạy mọi kênh"
-        title="Tạo chiến dịch đa kênh"
-        description="Mô tả chiến dịch bằng một câu, trợ lý soạn phần còn lại. AdHub tạo trên từng nền tảng ở trạng thái Tạm dừng để bạn kiểm tra trước khi chạy."
-        actions={
-          <button type="button" className="btn-secondary" onClick={autofill}>
-            <Icon name="refresh" size={15} />
-            Tự điền mẫu
-          </button>
-        }
-      />
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader
+          title="Tạo chiến dịch mới"
+          description="Quy trình 5 bước thiết lập chiến dịch Dark Post an toàn, tự động xác minh trước khi gửi lên Meta."
+        />
 
-      <section className="card-ai mb-6 p-5 sm:p-6">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold">Mô tả chiến dịch của bạn</p>
-          <AiBadge label="Trợ lý soạn" />
+        {/* Save Status Banner */}
+        <div className="flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 sm:self-auto">
+          {saveStatus === 'saving' && (
+            <>
+              <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
+              <span>Đang lưu bản nháp...</span>
+            </>
+          )}
+          {saveStatus === 'saved' && (
+            <>
+              <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Đã lưu lúc {lastSavedAt}</span>
+            </>
+          )}
+          {saveStatus === 'error' && (
+            <>
+              <span className="h-2 w-2 rounded-full bg-amber-500" />
+              <span>Lưu cục bộ (Ngoại tuyến)</span>
+            </>
+          )}
+          {saveStatus === 'idle' && (
+            <>
+              <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+              <span>Bản nháp tự động lưu</span>
+            </>
+          )}
         </div>
-        <p className="mt-1 text-xs text-muted">
-          Nêu sản phẩm, ưu đãi, dịp và ngân sách — có dấu hay không dấu đều được. Ctrl+Enter để soạn.
-        </p>
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-          <textarea
-            className="input min-h-[52px] flex-1 resize-y"
-            rows={2}
-            aria-label="Mô tả chiến dịch"
-            placeholder={BRIEF_EXAMPLES[0]}
-            value={briefText}
-            onChange={(e) => setBriefText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) draftFromBrief(briefText);
-            }}
-          />
-          <button
-            type="button"
-            className="btn-ai h-auto min-h-[52px] px-5"
-            disabled={!briefText.trim()}
-            onClick={() => draftFromBrief(briefText)}
-          >
-            <Icon name="sparkles" size={16} />
-            Soạn bằng AI
-          </button>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {BRIEF_EXAMPLES.map((example) => (
-            <button
-              key={example}
-              type="button"
-              className="rounded-full border border-line bg-surface-raised px-3 py-1 text-xs text-muted transition-colors hover:border-accent/40 hover:text-ink"
-              onClick={() => {
-                setBriefText(example);
-                draftFromBrief(example);
-              }}
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-        {aiNote && (
-          <p role="status" className="mt-4 flex items-start gap-2 rounded-xl bg-spark-soft px-3 py-2 text-sm text-ink-soft">
-            <Icon name="check" size={16} className="mt-0.5 shrink-0 text-spark" />
-            Đã soạn xong — {aiNote}. Kiểm tra lại bên dưới rồi bấm tạo.
-          </p>
-        )}
-      </section>
+      </div>
 
-      <form onSubmit={onSubmit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-6">
-          <Step number="01" title="Thông tin chiến dịch">
-            <Field label="Tên chiến dịch">
-              <input
-                className="input"
-                name="name"
-                required
-                minLength={3}
-                maxLength={120}
-                autoComplete="off"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="VD: Sale 11.11 – BST mùa đông"
-              />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Mục tiêu">
-                <select className="input" value={objective} onChange={(e) => setObjective(e.target.value as Objective)}>
-                  {Object.entries(OBJECTIVE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field
-                label="Tổng ngân sách mỗi ngày (VND)"
-                hint={user?.dailyBudgetLimit ? `Mỗi kênh tối đa ${formatVnd(user.dailyBudgetLimit)}/ngày` : undefined}
-              >
-                <input
-                  className="input tabular-nums"
-                  type="number"
-                  inputMode="numeric"
-                  min={BUDGET_STEP}
-                  step={BUDGET_STEP}
-                  required
-                  value={totalDailyBudget}
-                  onChange={(e) => setTotalDailyBudget(Number(e.target.value))}
-                />
-              </Field>
-            </div>
-            <div role="group" aria-label="Chọn nhanh tổng ngân sách" className="flex flex-wrap gap-2">
-              {BUDGET_PRESETS.map((amount) => (
+      {/* Stepper Navigation */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex min-w-[600px] items-center justify-between">
+          {STEPS.map((s, index) => {
+            const isPassed = currentStep > s.step;
+            const isCurrent = currentStep === s.step;
+            return (
+              <div key={s.step} className="flex flex-1 items-center">
                 <button
-                  key={amount}
                   type="button"
-                  aria-pressed={totalDailyBudget === amount}
-                  className={`${totalDailyBudget === amount ? 'btn-primary' : 'btn-secondary'} btn-sm tabular-nums`}
-                  onClick={() => setTotalDailyBudget(amount)}
+                  onClick={() => setStep(s.step)}
+                  className="flex items-center gap-2.5 text-left focus:outline-none"
                 >
-                  {formatVnd(amount)}
-                </button>
-              ))}
-            </div>
-          </Step>
-
-          <Step
-            number="02"
-            title="Chọn nền tảng và chia ngân sách"
-            aside={
-              <Tag tone={percentSum === 100 ? 'positive' : 'negative'}>
-                <span className="tabular-nums">Tổng {percentSum}%</span>
-              </Tag>
-            }
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="btn-ai btn-sm"
-                disabled={selected.length < 2 || roasByPlatform.size === 0}
-                title={roasByPlatform.size === 0 ? 'Chưa có số liệu ROAS để phân bổ' : undefined}
-                onClick={() => setShares(suggestAllocation(selected, roasByPlatform))}
-              >
-                <Icon name="sparkles" size={14} />
-                Phân bổ thông minh theo ROAS
-              </button>
-              <button
-                type="button"
-                className="btn-secondary btn-sm"
-                disabled={selected.length < 2}
-                onClick={() => setShares(splitEvenly(selected))}
-              >
-                Chia đều
-              </button>
-              <p className="text-xs text-muted">Bấm nền tảng để chọn/bỏ. Sửa tỉ lệ một kênh, các kênh còn lại tự cân về 100%.</p>
-            </div>
-            <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
-              {PLATFORMS.map((platform) => {
-                const enabled = shares[platform] !== undefined;
-                const percent = percentOf(platform);
-                const budget = budgets.get(platform) ?? 0;
-                const min = minBudget.get(platform);
-                const roas = roasByPlatform.get(platform);
-                // Only this channel fails on the server; the others are still created.
-                const belowMin = enabled && percent > 0 && min !== undefined && budget < min;
-                return (
-                  <li
-                    key={platform}
-                    className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors ${
-                      enabled ? 'bg-surface' : 'bg-ink/[0.02]'
+                  <div
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all ${
+                      isPassed
+                        ? 'bg-emerald-500 text-white'
+                        : isCurrent
+                          ? 'bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-950/60'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                     }`}
                   >
-                    <button
-                      type="button"
-                      aria-pressed={enabled}
-                      className="flex min-w-0 flex-1 flex-wrap items-center gap-3 text-left"
-                      onClick={() => togglePlatform(platform)}
-                    >
-                      <span
-                        aria-hidden
-                        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
-                          enabled ? 'justify-end bg-accent' : 'justify-start bg-line-strong'
-                        }`}
-                      >
-                        <span className="h-4 w-4 rounded-full bg-white shadow-soft" />
-                      </span>
-                      <PlatformTag platform={platform} />
-                      {roas !== undefined && <span className="text-xs tabular-nums text-muted">ROAS {formatDecimal(roas)}x</span>}
-                      {integrations.data && !connected.has(platform) && <Tag tone="caution">Chưa kết nối</Tag>}
-                      {belowMin && <Tag tone="caution">Tối thiểu {formatVnd(min)}/ngày</Tag>}
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <input
-                        aria-label={`Tỉ lệ ngân sách cho ${PLATFORM_META[platform].label} (%)`}
-                        className="input h-9 w-20 text-right tabular-nums"
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        max={100}
-                        disabled={!enabled || selected.length < 2}
-                        value={percent}
-                        onChange={(e) => setPercent(platform, Number(e.target.value))}
-                      />
-                      <span className="text-sm text-muted">%</span>
-                      <span className="w-28 text-right text-sm font-medium tabular-nums">{enabled ? formatVnd(budget) : '—'}</span>
-                    </div>
-                    {enabled && (
-                      <div className="h-1 w-full overflow-hidden rounded-full bg-ink/5">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${percent}%`, background: PLATFORM_META[platform].color }}
-                        />
-                      </div>
+                    {isPassed ? (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      s.step
                     )}
-                  </li>
-                );
-              })}
-            </ul>
-          </Step>
-
-          <Step
-            number="03"
-            title="Nội dung quảng cáo"
-            aside={
-              <button
-                type="button"
-                className="btn-ghost btn-sm text-spark"
-                disabled={!name.trim() && !briefText.trim()}
-                onClick={rewriteCopy}
-              >
-                <Icon name="sparkles" size={14} />
-                Viết bằng AI
-              </button>
-            }
-          >
-            {variants.length > 0 && (
-              <div role="radiogroup" aria-label="Phương án nội dung" className="grid gap-2 sm:grid-cols-3">
-                {variants.map((v) => {
-                  const active = v.headline === creative.headline && v.primaryText === creative.primaryText;
-                  return (
-                    <button
-                      key={v.angle}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => setCreative({ ...creative, headline: v.headline, primaryText: v.primaryText })}
-                      className={`rounded-xl border p-3 text-left transition-all ${
-                        active ? 'border-accent bg-accent-soft shadow-glow' : 'border-line bg-surface-raised hover:border-accent/40'
+                  </div>
+                  <div>
+                    <div
+                      className={`text-xs font-semibold ${
+                        isCurrent
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : isPassed
+                            ? 'text-slate-800 dark:text-slate-200'
+                            : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
-                      <span className="eyebrow text-spark">{v.angle}</span>
-                      <span className="mt-1 line-clamp-2 block text-sm font-semibold text-ink">{v.headline}</span>
-                      <span className="mt-1 line-clamp-2 block text-xs text-muted">{v.primaryText}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <Field label="Tiêu đề" hint={`${creative.headline.length}/100 ký tự`}>
-              <input
-                className="input"
-                required
-                maxLength={100}
-                autoComplete="off"
-                value={creative.headline}
-                onChange={(e) => setCreative({ ...creative, headline: e.target.value })}
-              />
-            </Field>
-            <Field label="Nội dung chính" hint={`${creative.primaryText.length}/500 ký tự`}>
-              <textarea
-                className="input"
-                rows={4}
-                required
-                maxLength={500}
-                value={creative.primaryText}
-                onChange={(e) => setCreative({ ...creative, primaryText: e.target.value })}
-              />
-            </Field>
-            <Field label="Link đích" hint="Trang của bạn; UTM được gắn tự động khi rời ô để đo nguồn chuyển đổi">
-              <input
-                className="input"
-                type="url"
-                inputMode="url"
-                spellCheck={false}
-                required
-                value={creative.landingUrl}
-                onChange={(e) => setCreative({ ...creative, landingUrl: e.target.value })}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
-                  if (isWebUrl(value)) setCreative((c) => ({ ...c, landingUrl: withUtm(value, slugify(name || 'chien-dich')) }));
-                }}
-              />
-            </Field>
-            <div className="flex items-start gap-4 rounded-xl border border-line bg-surface-raised p-4">
-              <ScoreRing score={review.score} size={48} label={`Điểm nội dung ${review.score}/100`} />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">
-                  Chất lượng nội dung: {review.score >= 80 ? 'rất tốt' : review.score >= 55 ? 'khá' : 'cần cải thiện'}
-                </p>
-                {review.tips.length === 0 ? (
-                  <p className="mt-0.5 text-xs text-muted">Nội dung đã đủ các yếu tố quan trọng.</p>
-                ) : (
-                  <ul className="mt-1 space-y-0.5 text-xs text-muted">
-                    {review.tips.slice(0, 3).map((tip) => (
-                      <li key={tip}>• {tip}</li>
-                    ))}
-                  </ul>
+                      Bước {s.step}
+                    </div>
+                    <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      {s.title}
+                    </div>
+                  </div>
+                </button>
+
+                {index < STEPS.length - 1 && (
+                  <div
+                    className={`mx-4 h-0.5 flex-1 transition-colors ${
+                      isPassed ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-slate-200 dark:bg-slate-800'
+                    }`}
+                  />
                 )}
               </div>
-            </div>
-          </Step>
+            );
+          })}
         </div>
-
-        <aside className="space-y-4 lg:sticky lg:top-24">
-          <AdPreview creative={creative} platforms={selected} objective={objective} />
-          <div className="card-pad space-y-4">
-            <p className="eyebrow">Xác nhận</p>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted">Số chiến dịch</dt>
-                <dd className="font-medium tabular-nums">{selected.length}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted">Tổng mỗi ngày</dt>
-                <dd className="font-medium tabular-nums">{formatVnd(totalDailyBudget)}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted">Dự kiến 30 ngày</dt>
-                <dd className="font-medium tabular-nums">{formatVnd(totalDailyBudget * 30)}</dd>
-              </div>
-            </dl>
-            {allocationProblem && <p className="text-sm text-negative">{allocationProblem}</p>}
-            <button type="submit" className="btn-primary h-11 w-full" disabled={!isAllocationValid || create.isPending}>
-              <Icon name="send" size={16} />
-              {create.isPending ? 'Đang tạo…' : 'Tạo trên các nền tảng đã chọn'}
-            </button>
-            <ErrorMessage error={create.error} />
-          </div>
-          {create.data && <PublishResults results={create.data.results} />}
-        </aside>
-      </form>
-    </>
-  );
-}
-
-function Step({ number, title, aside, children }: { number: string; title: string; aside?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="card-pad">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-3">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-xs font-bold tabular-nums text-accent">
-            {number}
-          </span>
-          <span className="section-title">{title}</span>
-        </h2>
-        {aside}
       </div>
-      <div className="space-y-4">{children}</div>
-    </section>
-  );
-}
 
-function PublishResults({ results }: { results: PlatformPublishResult[] }) {
-  return (
-    <div className="card-pad animate-fade-up space-y-3" aria-live="polite">
-      <p className="eyebrow">Kết quả</p>
-      <ul className="space-y-3">
-        {results.map((r) => (
-          <li key={r.platform} className="space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <PlatformTag platform={r.platform} />
-              {r.success ? <Tag tone="positive">Đã tạo</Tag> : <Tag tone="negative">Thất bại</Tag>}
+      {/* AI Brief & Autofill Assistant (Available at Step 1) */}
+      {currentStep === 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50/50 to-pink-50/40 p-4 dark:border-purple-900/40 dark:from-purple-950/20 dark:to-pink-950/20">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-xs font-bold text-white shadow-sm">
+              ✨
+            </span>
+            <div>
+              <div className="text-sm font-semibold text-purple-950 dark:text-purple-200">
+                Trợ lý tạo nhanh bằng AI Brief & Mẫu có sẵn
+              </div>
+              <div className="text-xs text-purple-700/80 dark:text-purple-300/80">
+                Nhập 1 dòng mô tả ý tưởng hoặc chọn mẫu để tự động điền toàn bộ cấu hình.
+              </div>
             </div>
-            <p className={`text-xs ${r.success ? 'text-muted' : 'text-negative'}`}>
-              {r.success ? `${formatVnd(r.campaign.dailyBudget)}/ngày · ${r.campaign.platformObjective}` : r.error}
-            </p>
-            {r.success && r.account && (
-              <p className="flex items-start gap-1.5 rounded-lg bg-spark-soft px-2 py-1.5 text-xs text-ink-soft">
-                <Icon name="sparkles" size={12} className="mt-0.5 shrink-0 text-spark" />
-                <span>
-                  Tự chọn tài khoản <span className="font-semibold">{r.account.name}</span>. {r.account.reason}
-                </span>
-              </p>
-            )}
-            {r.success && (
-              <Link to={`/campaigns/${r.campaign.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">
-                Xem chi tiết & bản xem trước <Icon name="arrowRight" size={12} />
-              </Link>
-            )}
-          </li>
-        ))}
-      </ul>
-      <Link to="/campaigns" className="btn-secondary w-full">
-        Xem danh sách chiến dịch
-      </Link>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsAiBriefOpen((v) => !v)}
+              className="rounded-lg border border-purple-300 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm hover:bg-purple-50 dark:border-purple-800 dark:bg-slate-900 dark:text-purple-300"
+            >
+              {isAiBriefOpen ? 'Đóng AI Brief' : 'Nhập AI Brief 🪄'}
+            </button>
+            <button
+              type="button"
+              onClick={handleAutofillTemplate}
+              className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-700"
+            >
+              Mẫu ngẫu nhiên 🎲
+            </button>
+          </div>
+
+          {isAiBriefOpen && (
+            <div className="mt-3 w-full rounded-lg bg-white p-3 shadow-inner dark:bg-slate-900">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={briefInput}
+                  onChange={(e) => setBriefInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleApplyBrief()}
+                  placeholder="Ví dụ: Giảm 20% căn hộ nghỉ dưỡng Phú Quốc, ngân sách 2 triệu/ngày, link https://phuquoc.vn"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyBrief}
+                  className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700"
+                >
+                  Áp dụng
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main Step Form Body */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        {currentStep === 1 && (
+          <GoalStep
+            payload={payload}
+            onChange={updatePayload}
+            errors={stepErrors}
+          />
+        )}
+
+        {currentStep === 2 && (
+          <ContentStep
+            payload={payload}
+            onChange={updatePayload}
+            errors={stepErrors}
+          />
+        )}
+
+        {currentStep === 3 && (
+          <AudienceStep
+            payload={payload}
+            onChange={updatePayload}
+            errors={stepErrors}
+          />
+        )}
+
+        {currentStep === 4 && (
+          <BudgetScheduleStep
+            payload={payload}
+            onChange={updatePayload}
+            errors={stepErrors}
+            dailyBudgetLimit={user?.dailyBudgetLimit}
+          />
+        )}
+
+        {currentStep === 5 && (
+          <ReviewStep
+            draft={draft ?? {
+              id: 'temp',
+              ownerId: user?.id ?? '',
+              revision: 1,
+              state: 'DRAFT',
+              step: 5,
+              payload,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            }}
+            onSubmitted={handleSubmitted}
+            onBackToStep={(s) => setStep(s)}
+          />
+        )}
+
+        {/* Wizard Footer Navigation */}
+        <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-slate-800">
+          <button
+            type="button"
+            disabled={currentStep === 1}
+            onClick={handleBack}
+            className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
+            ← Quay lại
+          </button>
+
+          {currentStep < 5 && (
+            <button
+              type="button"
+              onClick={handleNext}
+              className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              Tiếp tục →
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

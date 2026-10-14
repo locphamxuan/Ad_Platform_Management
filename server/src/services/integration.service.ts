@@ -30,6 +30,10 @@ export class IntegrationService {
     private readonly now: () => number = Date.now,
   ) {}
 
+  getAdapter(platform: Platform): IAdPlatformAdapter {
+    return this.registry.get(platform);
+  }
+
   /** The account campaigns of this platform run in unless they name another. */
   async defaultAccountId(platform: Platform): Promise<string | undefined> {
     return (await this.integrations.find(platform))?.accountId;

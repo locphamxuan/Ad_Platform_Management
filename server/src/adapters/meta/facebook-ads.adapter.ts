@@ -1,13 +1,27 @@
-import type { AdAccount, Campaign, CampaignStatus, MetricDaily, Objective } from '../../domain/types.js';
-import { AppError } from '../../domain/errors.js';
-import type { MetaConfig } from '../../config/env.js';
 import type {
+  AccountHealthResult,
   CreatePlatformCampaignInput,
   CreatePlatformCampaignResult,
   IAdPlatformAdapter,
+  LocationSearchResult,
+  StatusFetchResult,
 } from '../ad-platform.adapter.js';
 import { isPlatformCampaignId } from '../ad-platform.adapter.js';
+import type {
+  AdAccount,
+  Campaign,
+  CampaignSchedule,
+  CampaignStatus,
+  CheckLevelResult,
+  Creative,
+  MetricDaily,
+  Objective,
+  PageRef,
+} from '../../domain/types.js';
+import { AppError } from '../../domain/errors.js';
+import type { MetaConfig } from '../../config/env.js';
 import { MetaApiError, MetaGraphClient } from './meta-graph.client.js';
+import { mapMetaError } from './meta-errors.js';
 
 const OBJECTIVE_MAP: Record<Objective, string> = {
   awareness: 'OUTCOME_AWARENESS',
@@ -16,7 +30,6 @@ const OBJECTIVE_MAP: Record<Objective, string> = {
   sales: 'OUTCOME_SALES',
 };
 
-/** How each objective is optimised at ad set level; leads and sales track a website Pixel event. */
 const AD_SET_GOALS: Record<Objective, { optimizationGoal: string; pixelEvent?: string }> = {
   awareness: { optimizationGoal: 'REACH' },
   traffic: { optimizationGoal: 'LINK_CLICKS' },
@@ -24,14 +37,28 @@ const AD_SET_GOALS: Record<Objective, { optimizationGoal: string; pixelEvent?: s
   sales: { optimizationGoal: 'OFFSITE_CONVERSIONS', pixelEvent: 'PURCHASE' },
 };
 
-/** Insight action types counted as a conversion, most specific first. */
 const CONVERSION_ACTIONS: Partial<Record<Objective, string[]>> = {
   leads: ['offsite_conversion.fb_pixel_lead', 'lead', 'onsite_conversion.lead_grouped'],
   sales: ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase'],
 };
 
-/** Ad account statuses: 1 = active; anything else cannot deliver ads. */
 const ACTIVE_ACCOUNT_STATUS = 1;
+
+export function mapCallToAction(cta?: string): string {
+  const map: Record<string, string> = {
+    LEARN_MORE: 'LEARN_MORE',
+    SHOP_NOW: 'SHOP_NOW',
+    SIGN_UP: 'SIGN_UP',
+    CONTACT_US: 'CONTACT_US',
+    SEND_MESSAGE: 'MESSAGE_PAGE',
+    GET_OFFER: 'GET_OFFER',
+    BOOK_TRAVEL: 'BOOK_TRAVEL',
+    WATCH_MORE: 'WATCH_MORE',
+    DOWNLOAD: 'DOWNLOAD',
+    APPLY_NOW: 'APPLY_NOW',
+  };
+  return (cta && map[cta.toUpperCase()]) || 'LEARN_MORE';
+}
 
 interface InsightAction {
   action_type: string;
@@ -46,38 +73,20 @@ interface InsightRow {
   action_values?: InsightAction[];
 }
 
-/**
- * Real Facebook/Instagram ads through the Meta Marketing API.
- * One AdHub campaign = one Meta campaign (holding the daily budget) with one ad set and one ad,
- * so status and budget changes only ever touch the campaign object. The ad is a Page post that is
- * on the Page's timeline only while the campaign runs: published when first switched on, hidden when paused.
- */
 export class FacebookAdsAdapter implements IAdPlatformAdapter {
   readonly platform = 'facebook' as const;
   readonly displayName = 'Facebook Ads';
   readonly live = true;
-  /** Meta rejects very small daily budgets; the exact floor depends on the account. */
   readonly minDailyBudget = 25_000;
+  readonly activationOnPlatformOnly = true;
 
   private readonly graph: MetaGraphClient;
 
   constructor(
     private readonly config: MetaConfig,
-    private readonly http: typeof fetch = fetch,
+    http: typeof fetch = fetch,
   ) {
     this.graph = new MetaGraphClient(config, http);
-  }
-
-  /** Page posts must be written with the Page's own token, which the user token can hand out. */
-  private async pageGraph(): Promise<MetaGraphClient> {
-    const page = await this.graph.get<{ access_token?: string }>(this.config.pageId, { fields: 'access_token' });
-    if (!page.access_token) {
-      throw new AppError(
-        'META_PAGE_TOKEN',
-        'Token Meta không quản lý được Page, cần quyền pages_manage_posts và vai trò quản trị trên Page',
-      );
-    }
-    return new MetaGraphClient({ ...this.config, accessToken: page.access_token }, this.http);
   }
 
   mapObjective(objective: Objective): string {
@@ -98,182 +107,534 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
     return { accountId: this.config.adAccountId, accountName: account.name };
   }
 
-  /**
-   * The VND ad accounts the token's user can advertise from. The page and pixel belong to the same
-   * business, so any of them can run AdHub campaigns; other currencies are left out.
-   */
   async listAdAccounts(): Promise<AdAccount[]> {
-    const { data } = await this.graph.get<{ data: MetaAdAccountRow[] }>('me/adaccounts', {
+    const { data = [] } = await this.graph.get<{ data: MetaAdAccountRow[] }>('me/adaccounts', {
       fields: 'id,name,account_status,currency,amount_spent,spend_cap',
-      limit: 50,
+      limit: 100,
     });
-    const accounts = data.filter((row) => row.currency === 'VND').map(toAdAccount);
-    if (!accounts.some((a) => a.id === this.config.adAccountId)) {
-      const own = await this.authorize();
-      accounts.unshift({ id: own.accountId, name: own.accountName, active: true, spendCap: null, amountSpent: null });
-    }
-    return accounts;
+    return data.filter((row) => row.currency === 'VND').map(toAdAccount);
   }
 
-  async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
-    const goal = AD_SET_GOALS[input.objective];
-    if (goal.pixelEvent && !this.config.pixelId) {
-      throw new AppError('META_PIXEL_REQUIRED', 'Mục tiêu này cần META_PIXEL_ID trong server/.env');
-    }
-
-    const account = input.accountId ?? this.config.adAccountId;
-    // VND has no minor unit, so Meta takes budgets in whole dong.
-    const campaign = await this.graph.post<{ id: string }>(`${account}/campaigns`, {
-      name: input.name,
-      objective: this.mapObjective(input.objective),
-      status: 'PAUSED',
-      buying_type: 'AUCTION',
-      special_ad_categories: [],
-      daily_budget: input.dailyBudget,
-      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-    });
-
-    let page: MetaGraphClient | undefined;
-    let postId: string | undefined;
-    try {
-      // Children start ACTIVE: the PAUSED campaign alone decides whether anything delivers.
-      const adSet = await this.graph.post<{ id: string }>(`${account}/adsets`, {
-        name: `${input.name} - Nhóm quảng cáo`,
-        campaign_id: campaign.id,
-        status: 'ACTIVE',
-        billing_event: 'IMPRESSIONS',
-        optimization_goal: goal.optimizationGoal,
-        targeting: {
-          geo_locations: { countries: ['VN'] },
-          age_min: 18,
-          targeting_automation: { advantage_audience: 0 },
-        },
-        promoted_object: goal.pixelEvent
-          ? { pixel_id: this.config.pixelId, custom_event_type: goal.pixelEvent }
-          : undefined,
-      });
-
-      // A real Page post (not an inline "dark post"), kept hidden until the campaign is switched on;
-      // updateStatus publishes it so the ad also shows on the Page's timeline.
-      // Meta only lets verified domain owners override the link title (error #100), so the headline
-      // leads the post text and the link preview keeps the landing page's own title.
-      page = await this.pageGraph();
-      const post = await page.post<{ id: string }>(`${this.config.pageId}/feed`, {
-        message: `${input.creative.headline}\n\n${input.creative.primaryText}`,
-        link: input.creative.landingUrl,
-        call_to_action: { type: 'LEARN_MORE', value: { link: input.creative.landingUrl } },
-        published: false,
-      });
-      postId = post.id;
-
-      const creative = await this.graph.post<{ id: string }>(`${account}/adcreatives`, {
-        name: `${input.name} - Mẫu quảng cáo`,
-        object_story_id: post.id,
-      });
-
-      await this.graph.post(`${account}/ads`, {
-        name: `${input.name} - Quảng cáo`,
-        adset_id: adSet.id,
-        creative: { creative_id: creative.id },
-        status: 'ACTIVE',
-      });
-    } catch (error) {
-      // Don't leave a half-built campaign behind in Ads Manager, nor its hidden post on the Page.
-      if (page && postId) await page.delete(postId).catch(() => undefined);
-      await this.graph.delete(campaign.id).catch(() => undefined);
-      throw error;
-    }
-
-    return { externalId: campaign.id, platformObjective: this.mapObjective(input.objective) };
-  }
-
-  /**
-   * Switches the campaign and its ads together, so Ads Manager shows every toggle in the same state,
-   * and keeps the ad's Page post on the timeline exactly while the campaign runs.
-   */
-  async updateStatus(externalId: string, status: CampaignStatus): Promise<void> {
-    const id = assertMetaId(externalId);
-    if (status === 'ACTIVE') {
-      // Show the post first: if it cannot go public the campaign stays paused, matching AdHub's state.
-      const ads = await this.campaignAds(id);
-      await this.setPagePostsVisible(ads.postIds, true);
-      for (const adId of ads.adIds) await this.graph.post(adId, { status });
-      await this.graph.post(id, { status });
-      return;
-    }
-    // Stop spending before anything else; the ads' own toggles and the post are the less urgent half.
-    await this.graph.post(id, { status });
-    try {
-      const ads = await this.campaignAds(id);
-      for (const adId of ads.adIds) await this.graph.post(adId, { status });
-      await this.setPagePostsVisible(ads.postIds, false);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new AppError(
-        'META_PAUSE_INCOMPLETE',
-        `Đã dừng chiến dịch trên Meta nhưng chưa tắt hết quảng cáo hoặc chưa ẩn được bài trên Page: ${reason}`,
-      );
-    }
-  }
-
-  /**
-   * The campaign's ads and the Page posts they run. Meta stops listing ads once their campaign is
-   * deleted, so this must be read before deleting.
-   */
-  private async campaignAds(campaignId: string): Promise<{ adIds: string[]; postIds: string[] }> {
+  async listPages(): Promise<PageRef[]> {
     const { data = [] } = await this.graph.get<{
-      data?: { id: string; creative?: { effective_object_story_id?: string } }[];
-    }>(`${campaignId}/ads`, { fields: 'id,creative{effective_object_story_id}' });
+      data: Array<{
+        id: string;
+        name: string;
+        tasks?: string[];
+        is_published?: boolean;
+        instagram_accounts?: { data: Array<{ id: string; username: string }> };
+      }>;
+    }>('me/accounts', {
+      fields: 'id,name,tasks,is_published,instagram_accounts{id,username}',
+      limit: 100,
+    });
+
+    return data.map((p) => ({
+      id: p.id,
+      name: p.name,
+      hasInstagram: Boolean(p.instagram_accounts?.data?.length),
+      isAdvertisingAllowed: Boolean(p.tasks?.includes('ADVERTISE') || p.tasks?.includes('MANAGE') || p.is_published !== false),
+    }));
+  }
+
+  async searchLocations(query: string): Promise<LocationSearchResult[]> {
+    if (!query.trim()) return [];
+    const { data = [] } = await this.graph.get<{
+      data: Array<{ key: string; name: string; type: string }>;
+    }>('search', {
+      type: 'adgeolocation',
+      q: query.trim(),
+      country_code: 'VN',
+      limit: 20,
+    });
+    return data.map((d) => ({ key: String(d.key), name: d.name, type: d.type }));
+  }
+
+  async accountHealth(): Promise<AccountHealthResult> {
+    const account = await this.graph.get<{
+      name: string;
+      currency: string;
+      account_status: number;
+      spend_cap?: string;
+      amount_spent?: string;
+      balance?: string;
+    }>(this.config.adAccountId, {
+      fields: 'name,currency,account_status,spend_cap,amount_spent,balance',
+    });
+
+    const reasons: string[] = [];
+    const active = account.account_status === ACTIVE_ACCOUNT_STATUS;
+    if (!active) reasons.push('Tài khoản quảng cáo đang bị vô hiệu hóa hoặc bị hạn chế');
+    if (account.currency !== 'VND') reasons.push(`Tiền tệ là ${account.currency}, AdHub yêu cầu VND`);
+
+    const spendCap = Number(account.spend_cap ?? 0);
+    const amountSpent = Number(account.amount_spent ?? 0);
+    const spendCapReached = spendCap > 0 && amountSpent >= spendCap;
+    if (spendCapReached) reasons.push('Tài khoản đã chạm ngưỡng chi tiêu tối đa (Spend Cap)');
+
+    const balance = Number(account.balance ?? 0);
+    const balanceIssue = balance > 0;
+    if (balanceIssue) reasons.push('Tài khoản có số dư nợ cần thanh toán');
+
     return {
-      adIds: data.map((ad) => ad.id),
-      postIds: [...new Set(data.map((ad) => ad.creative?.effective_object_story_id).filter((id) => id !== undefined))],
+      healthy: active && account.currency === 'VND' && !spendCapReached && !balanceIssue,
+      currency: account.currency,
+      active,
+      spendCapReached,
+      balanceIssue,
+      reasons,
     };
   }
 
   /**
-   * Shows or hides the ad posts on the Page timeline. A hidden post still serves as the ad,
-   * so hiding (rather than deleting) lets the campaign be switched back on with the same post.
-   * Meta refuses `is_hidden` on the Page's own posts (#100), so this goes through `timeline_visibility`:
-   * "hidden" takes the post off the timeline and only "forced_allow" brings it back ("normal" fails).
+   * Uploads an image asset to Meta ad account image library (cost-free, private).
    */
-  private async setPagePostsVisible(postIds: string[], visible: boolean): Promise<void> {
-    if (postIds.length === 0) return;
+  async uploadImage(accountId: string, buffer: Buffer, fileName: string): Promise<string> {
+    const account = accountId || this.config.adAccountId;
+    const res = await this.graph.post<{ images: Record<string, { hash: string }> }>(`${account}/adimages`, {
+      bytes: buffer.toString('base64'),
+      filename: fileName,
+    });
+    const hash = Object.values(res.images || {})[0]?.hash;
+    if (!hash) {
+      throw new AppError('META_IMAGE_UPLOAD_FAILED', 'Không thể tải ảnh lên thư viện Meta');
+    }
+    return hash;
+  }
 
-    const page = await this.pageGraph();
-    for (const postId of postIds) {
-      const post = await page.get<{ is_published?: boolean; is_hidden?: boolean }>(postId, {
-        fields: 'is_published,is_hidden',
+  /**
+   * Builds targeting spec for adset.
+   */
+  private buildTargeting(input: CreatePlatformCampaignInput) {
+    const audience = input.audience;
+    const isHousing = input.specialCategory === 'HOUSING';
+
+    const targeting: Record<string, any> = {
+      age_min: isHousing ? 18 : (audience?.ageMin ?? 18),
+      age_max: isHousing ? 65 : (audience?.ageMax ?? 65),
+    };
+
+    if (!isHousing && audience?.genders && audience.genders.length === 1) {
+      targeting.genders = audience.genders[0] === 'MALE' ? [1] : [2];
+    }
+
+    if (!audience || audience.locations === 'VN' || !Array.isArray(audience.locations) || audience.locations.length === 0) {
+      targeting.geo_locations = { countries: ['VN'] };
+    } else {
+      const regions = audience.locations
+        .filter((l) => l.type === 'region' || l.type === 'state')
+        .map((l) => ({ key: l.key }));
+      const cities = audience.locations
+        .filter((l) => l.type === 'city')
+        .map((l) => ({ key: l.key, radius: isHousing ? 15 : undefined }));
+
+      targeting.geo_locations = {
+        countries: ['VN'],
+        ...(regions.length > 0 ? { regions } : {}),
+        ...(cities.length > 0 ? { cities } : {}),
+      };
+    }
+
+    return targeting;
+  }
+
+  /**
+   * Validates campaign in 4 levels using Meta's execution_options=["validate_only"].
+   */
+  async validateCampaign(input: CreatePlatformCampaignInput): Promise<CheckLevelResult[]> {
+    const account = input.accountId || this.config.adAccountId;
+    const results: CheckLevelResult[] = [];
+    const goal = AD_SET_GOALS[input.objective];
+
+    // Level 1: Campaign
+    try {
+      await this.graph.post(`${account}/campaigns`, {
+        name: `[VALIDATE] ${input.name}`,
+        objective: this.mapObjective(input.objective),
+        status: 'PAUSED',
+        special_ad_categories: input.specialCategory === 'HOUSING' ? ['HOUSING'] : ['NONE'],
+        execution_options: ['validate_only'],
       });
-      if (visible) {
-        if (post.is_published === false) await page.post(postId, { is_published: true });
-        if (post.is_hidden === true) await page.post(postId, { timeline_visibility: 'forced_allow' });
-      } else if (post.is_published !== false && post.is_hidden !== true) {
-        // Never-published posts are already off the timeline.
-        await page.post(postId, { timeline_visibility: 'hidden' });
+      results.push({ level: 'CAMPAIGN', status: 'PASSED' });
+    } catch (err) {
+      const mapped = mapMetaError(err, { level: 'CAMPAIGN' });
+      results.push({ level: 'CAMPAIGN', status: 'FAILED', code: mapped.code, message: mapped.message });
+      return results; // Cannot proceed if campaign level fails
+    }
+
+    // Level 2: Ad Set
+    try {
+      const targeting = this.buildTargeting(input);
+      const schedule = input.schedule;
+      await this.graph.post(`${account}/adsets`, {
+        name: `[VALIDATE] ${input.name} - AdSet`,
+        campaign_id: '1234567890', // placeholder for validate_only
+        daily_budget: input.dailyBudget,
+        billing_event: 'IMPRESSIONS',
+        optimization_goal: goal.optimizationGoal,
+        targeting,
+        start_time: schedule?.startTime,
+        end_time: schedule?.endTime,
+        promoted_object: goal.pixelEvent && this.config.pixelId
+          ? { pixel_id: this.config.pixelId, custom_event_type: goal.pixelEvent }
+          : undefined,
+        execution_options: ['validate_only'],
+      });
+      results.push({ level: 'AD_SET', status: 'PASSED' });
+    } catch (err) {
+      const mapped = mapMetaError(err, { level: 'AD_SET' });
+      results.push({ level: 'AD_SET', status: 'FAILED', code: mapped.code, message: mapped.message });
+    }
+
+    // Level 3 & 4: Ad Creative & Ad for each selected Page
+    const pages = input.pages && input.pages.length > 0
+      ? input.pages
+      : (this.config.pageId ? [{ id: this.config.pageId, name: 'Default Page' }] : []);
+
+    for (const page of pages) {
+      let creativePassed = false;
+      try {
+        await this.graph.post(`${account}/adcreatives`, {
+          name: `[VALIDATE] ${input.name} - ${page.name}`,
+          object_story_spec: {
+            page_id: page.id,
+            link_data: {
+              link: input.creative.landingUrl,
+              message: input.creative.primaryText,
+              name: input.creative.headline,
+              call_to_action: {
+                type: mapCallToAction(input.creative.cta),
+                value: { link: input.creative.landingUrl },
+              },
+            },
+          },
+          execution_options: ['validate_only'],
+        });
+        results.push({ level: 'AD_CREATIVE', pageId: page.id, status: 'PASSED' });
+        creativePassed = true;
+      } catch (err) {
+        const mapped = mapMetaError(err, { pageName: page.name, pageId: page.id, level: 'AD_CREATIVE' });
+        results.push({ level: 'AD_CREATIVE', pageId: page.id, status: 'FAILED', code: mapped.code, message: mapped.message });
+      }
+
+      if (creativePassed) {
+        try {
+          await this.graph.post(`${account}/ads`, {
+            name: `[VALIDATE] ${input.name} - ${page.name}`,
+            adset_id: '1234567890',
+            creative: { creative_id: '1234567890' },
+            status: 'ACTIVE',
+            execution_options: ['validate_only'],
+          });
+          results.push({ level: 'AD', pageId: page.id, status: 'PASSED' });
+        } catch (err) {
+          const mapped = mapMetaError(err, { pageName: page.name, pageId: page.id, level: 'AD' });
+          results.push({ level: 'AD', pageId: page.id, status: 'FAILED', code: mapped.code, message: mapped.message });
+        }
       }
     }
+
+    return results;
+  }
+
+  async previewAd(input: { pageId: string; creative: Creative; adFormat?: string }): Promise<{ iframeHtml?: string; fallback?: boolean }> {
+    const account = this.config.adAccountId;
+    const format = input.adFormat ?? 'DESKTOP_FEED_STANDARD';
+
+    try {
+      const res = await this.graph.get<{ data: Array<{ body: string }> }>(`${account}/generatepreviews`, {
+        ad_format: format,
+        creative: {
+          object_story_spec: {
+            page_id: input.pageId,
+            link_data: {
+              link: input.creative.landingUrl,
+              message: input.creative.primaryText,
+              name: input.creative.headline,
+              call_to_action: {
+                type: mapCallToAction(input.creative.cta),
+                value: { link: input.creative.landingUrl },
+              },
+            },
+          },
+        },
+      });
+      if (res.data?.[0]?.body) {
+        return { iframeHtml: res.data[0].body };
+      }
+      return { fallback: true };
+    } catch {
+      return { fallback: true };
+    }
+  }
+
+  async findByTag(tag: string, accountId?: string): Promise<{ campaignId: string; status: string; adCount: number } | null> {
+    const account = accountId || this.config.adAccountId;
+    const expectedTag = `[AH-${tag}]`;
+
+    const { data = [] } = await this.graph.get<{
+      data: Array<{ id: string; name: string; status: string }>;
+    }>(`${account}/campaigns`, {
+      fields: 'id,name,status',
+      limit: 50,
+    });
+
+    const found = data.find((c) => c.name.includes(expectedTag));
+    if (!found) return null;
+
+    const { data: ads = [] } = await this.graph.get<{ data: Array<{ id: string }> }>(`${found.id}/ads`, {
+      fields: 'id',
+    });
+
+    return { campaignId: found.id, status: found.status, adCount: ads.length };
+  }
+
+  async readBack(campaignId: string): Promise<{ campaignId: string; status: string; pages: string[]; schedule?: CampaignSchedule; adCount: number } | null> {
+    try {
+      const res = await this.graph.get<{
+        id: string;
+        name: string;
+        status: string;
+        adsets?: { data: Array<{ id: string; start_time?: string; end_time?: string }> };
+        ads?: {
+          data: Array<{
+            id: string;
+            name: string;
+            status: string;
+            creative?: { object_story_spec?: { page_id?: string } };
+          }>;
+        };
+      }>(campaignId, {
+        fields: 'id,name,status,adsets{id,start_time,end_time},ads{id,name,status,creative{object_story_spec}}',
+      });
+
+      const pages = (res.ads?.data || [])
+        .map((a) => a.creative?.object_story_spec?.page_id)
+        .filter((p): p is string => Boolean(p));
+
+      const firstAdset = res.adsets?.data?.[0];
+      const schedule: CampaignSchedule | undefined = firstAdset
+        ? { startTime: firstAdset.start_time, endTime: firstAdset.end_time }
+        : undefined;
+
+      return {
+        campaignId: res.id,
+        status: res.status,
+        pages,
+        schedule,
+        adCount: res.ads?.data?.length ?? 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Creates a Meta campaign adhering to rules:
+   * - R1: NEVER posts to /{page}/feed or sets is_published/timeline_visibility. Uses object_story_spec dark post.
+   * - R2: Campaign created as PAUSED. AdSet and Ads created as ACTIVE.
+   * - R5: Name carries [AH-${tag}] tag.
+   * - R6: Rollback on any failure (deletes created campaign).
+   * - R7: Verified via readBack.
+   */
+  async createCampaign(input: CreatePlatformCampaignInput): Promise<CreatePlatformCampaignResult> {
+    const account = input.accountId || this.config.adAccountId;
+    const goal = AD_SET_GOALS[input.objective];
+    if (goal.pixelEvent && !this.config.pixelId) {
+      throw new AppError('META_PIXEL_REQUIRED', `Mục tiêu "${input.objective}" yêu cầu cấu hình META_PIXEL_ID trong server/.env`);
+    }
+
+    const pages = input.pages && input.pages.length > 0
+      ? input.pages
+      : (this.config.pageId ? [{ id: this.config.pageId, name: 'Default Page' }] : []);
+
+    if (pages.length === 0) {
+      throw new AppError('META_PAGE_REQUIRED', 'Cần chọn ít nhất 1 Trang để tạo quảng cáo Facebook');
+    }
+
+    const campaignTag = input.idempotencyTag ? ` [AH-${input.idempotencyTag}]` : '';
+    const campaignName = `${input.name}${campaignTag}`;
+
+    let imageHash: string | undefined = input.image?.metaHash;
+    if (!imageHash && input.image?.buffer) {
+      imageHash = await this.uploadImage(account, input.image.buffer, input.image.fileName);
+    }
+
+    // Step 1: Create Campaign (PAUSED per R2)
+    const campaign = await this.graph.post<{ id: string }>(`${account}/campaigns`, {
+      name: campaignName,
+      objective: this.mapObjective(input.objective),
+      status: 'PAUSED',
+      special_ad_categories: input.specialCategory === 'HOUSING' ? ['HOUSING'] : ['NONE'],
+      ...(input.specialCategory === 'HOUSING' ? { special_ad_category_country: ['VN'] } : {}),
+    });
+
+    const createdAds: Array<{ adId: string; pageId: string; creativeId?: string }> = [];
+
+    try {
+      // Step 2: Create Ad Set (ACTIVE per R2)
+      const targeting = this.buildTargeting(input);
+      const schedule = input.schedule;
+      const adSet = await this.graph.post<{ id: string }>(`${account}/adsets`, {
+        name: `${input.name} - Nhóm quảng cáo`,
+        campaign_id: campaign.id,
+        daily_budget: input.dailyBudget,
+        billing_event: 'IMPRESSIONS',
+        optimization_goal: goal.optimizationGoal,
+        targeting,
+        status: 'ACTIVE',
+        start_time: schedule?.startTime,
+        end_time: schedule?.endTime,
+        promoted_object: goal.pixelEvent && this.config.pixelId
+          ? { pixel_id: this.config.pixelId, custom_event_type: goal.pixelEvent }
+          : undefined,
+      });
+
+      // Step 3: For each Page, create 1 dark post AdCreative and 1 Ad (ACTIVE per R2)
+      for (const page of pages) {
+        let creativeId: string | undefined;
+        try {
+          const creative = await this.graph.post<{ id: string }>(`${account}/adcreatives`, {
+            name: `${input.name} - ${page.name}`,
+            object_story_spec: {
+              page_id: page.id,
+              link_data: {
+                link: input.creative.landingUrl,
+                message: input.creative.primaryText,
+                name: input.creative.headline,
+                ...(imageHash ? { image_hash: imageHash } : {}),
+                call_to_action: {
+                  type: mapCallToAction(input.creative.cta),
+                  value: { link: input.creative.landingUrl },
+                },
+              },
+            },
+          });
+          creativeId = creative.id;
+
+          const ad = await this.graph.post<{ id: string }>(`${account}/ads`, {
+            name: `${input.name} - ${page.name}`,
+            adset_id: adSet.id,
+            creative: { creative_id: creative.id },
+            status: 'ACTIVE',
+          });
+
+          createdAds.push({ adId: ad.id, pageId: page.id, creativeId });
+        } catch (pageErr) {
+          const mapped = mapMetaError(pageErr, { pageName: page.name, pageId: page.id });
+          throw new AppError(mapped.code, mapped.message, 502);
+        }
+      }
+
+      // Step 4: Verify via readBack (R7)
+      const verified = await this.readBack(campaign.id);
+      if (!verified || verified.status !== 'PAUSED' || verified.adCount !== pages.length) {
+        throw new AppError('META_READBACK_MISMATCH', 'Đọc lại chiến dịch từ Meta không khớp với thông tin đã tạo');
+      }
+
+      return {
+        externalId: campaign.id,
+        platformObjective: this.mapObjective(input.objective),
+        meta: {
+          adSetId: adSet.id,
+          ads: createdAds.map((a) => ({
+            adId: a.adId,
+            pageId: a.pageId,
+            creativeId: a.creativeId,
+            review: { status: 'PENDING' },
+          })),
+        },
+      };
+    } catch (error) {
+      // Rollback on failure (R6)
+      try {
+        await this.graph.delete(campaign.id);
+      } catch (deleteErr) {
+        throw new AppError(
+          'NEEDS_RECONCILE',
+          `Tạo chiến dịch trên Meta thất bại và không thể rollback tự động: ${(deleteErr as Error).message}. Vui lòng đối chiếu trong Meta Ads Manager.`,
+          500,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Only changes campaign status. R1 preserved: no posts manipulated.
+   */
+  async updateStatus(externalId: string, status: CampaignStatus): Promise<void> {
+    const id = assertMetaId(externalId);
+    await this.graph.post(id, { status });
   }
 
   async updateBudget(externalId: string, dailyBudget: number): Promise<void> {
     await this.graph.post(assertMetaId(externalId), { daily_budget: dailyBudget });
   }
 
-  /**
-   * Deleting the campaign also deletes its ad set and ad, but not the ad's Page post, so the posts
-   * go first. That order keeps a failed delete retryable: until the campaign itself is gone its posts
-   * can still be found, posts deleted on an earlier try are skipped, and deleting a campaign Meta
-   * already deleted succeeds.
-   */
   async deleteCampaign(externalId: string): Promise<void> {
     if (!isPlatformCampaignId(externalId)) return;
-    const { postIds } = await this.campaignAds(externalId);
-    if (postIds.length > 0) {
-      const page = await this.pageGraph();
-      for (const postId of postIds) {
-        if (await postExists(page, postId)) await page.delete(postId);
+    try {
+      await this.graph.delete(externalId);
+    } catch (error) {
+      if (error instanceof MetaApiError && error.metaCode === 100) return;
+      throw error;
+    }
+  }
+
+  async fetchStatuses(campaignIds: string[]): Promise<Record<string, StatusFetchResult>> {
+    const validIds = campaignIds.filter(isPlatformCampaignId);
+    if (validIds.length === 0) return {};
+
+    const results: Record<string, StatusFetchResult> = {};
+    const chunkSize = 50;
+
+    for (let i = 0; i < validIds.length; i += chunkSize) {
+      const chunk = validIds.slice(i, i + chunkSize);
+      try {
+        const batchRes = await this.graph.get<Record<string, any>>('', {
+          ids: chunk.join(','),
+          fields: 'id,name,status,effective_status,daily_budget,adsets{id,start_time,end_time},ads{id,name,status,effective_status,ad_review_feedback}',
+        });
+
+        for (const id of chunk) {
+          const item = batchRes[id];
+          if (!item) {
+            results[id] = { status: 'PAUSED', deletedOnMeta: true };
+            continue;
+          }
+
+          const isDeleted = item.status === 'ARCHIVED' || item.status === 'DELETED';
+          const ads = item.ads?.data || [];
+          const firstAd = ads[0];
+          const reviewStatus = firstAd?.effective_status || item.effective_status;
+          const reviewReason = firstAd?.ad_review_feedback?.global?.reason || undefined;
+
+          const firstAdset = item.adsets?.data?.[0];
+          const schedule: CampaignSchedule | undefined = firstAdset
+            ? { startTime: firstAdset.start_time, endTime: firstAdset.end_time }
+            : undefined;
+
+          results[id] = {
+            status: item.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+            effectiveStatus: item.effective_status,
+            reviewStatus,
+            reviewReason,
+            deletedOnMeta: isDeleted,
+            dailyBudget: item.daily_budget ? Number(item.daily_budget) : undefined,
+            schedule,
+          };
+        }
+      } catch (error) {
+        if (error instanceof MetaApiError && error.metaCode === 100) {
+          for (const id of chunk) results[id] = { status: 'PAUSED', deletedOnMeta: true };
+        } else {
+          throw error;
+        }
       }
     }
-    await this.graph.delete(externalId);
+
+    return results;
   }
 
   async fetchDailyMetrics(campaign: Campaign, date: string): Promise<MetricDaily> {
@@ -290,12 +651,10 @@ interface MetaAdAccountRow {
   name: string;
   account_status: number;
   currency: string;
-  /** Strings in the currency's minor unit; VND has none, so they are whole dong */
   amount_spent?: string;
   spend_cap?: string;
 }
 
-/** Meta reports "0" for an account without a spending limit. */
 function toAdAccount(row: MetaAdAccountRow): AdAccount {
   const cap = Number(row.spend_cap ?? 0);
   return {
@@ -307,18 +666,6 @@ function toAdAccount(row: MetaAdAccountRow): AdAccount {
   };
 }
 
-/** Meta answers #100 for a post that no longer exists; anything else is a real failure. */
-async function postExists(page: MetaGraphClient, postId: string): Promise<boolean> {
-  try {
-    await page.get(postId, { fields: 'id' });
-    return true;
-  } catch (error) {
-    if (error instanceof MetaApiError && error.metaCode === 100) return false;
-    throw error;
-  }
-}
-
-/** Campaigns seeded by the demo have mock ids like "fb-1a2b"; Meta ids are numeric. */
 function assertMetaId(externalId: string): string {
   if (!/^\d+$/.test(externalId)) {
     throw new AppError('NOT_ON_META', 'Chiến dịch demo này không tồn tại trên Meta, chỉ chiến dịch tạo mới mới chạy thật');
@@ -326,11 +673,10 @@ function assertMetaId(externalId: string): string {
   return externalId;
 }
 
-/** No row means no delivery that day. */
 export function toDailyMetrics(campaign: Campaign, date: string, row: InsightRow = {}): MetricDaily {
-  const types = CONVERSION_ACTIONS[campaign.objective] ?? [];
+  const types = CONVERSION_ACTIONS[campaign.objective as keyof typeof CONVERSION_ACTIONS] ?? [];
   const pick = (list: InsightAction[] = []) => {
-    const type = types.find((t) => list.some((a) => a.action_type === t));
+    const type = types.find((t: string) => list.some((a) => a.action_type === t));
     return Number(list.find((a) => a.action_type === type)?.value ?? 0);
   };
   return {
@@ -340,6 +686,6 @@ export function toDailyMetrics(campaign: Campaign, date: string, row: InsightRow
     impressions: Number(row.impressions ?? 0),
     clicks: Number(row.inline_link_clicks ?? 0),
     conversions: pick(row.actions),
-    revenue: Math.round(pick(row.action_values)),
+    revenue: pick(row.action_values),
   };
 }

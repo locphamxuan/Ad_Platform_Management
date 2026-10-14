@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Icon, type IconName } from '../../components/icons';
 import {
@@ -25,6 +25,8 @@ import { invalidateCampaignViews, queryKeys } from '../../lib/query-keys';
 import { useChartColors } from '../../lib/theme';
 import type { AdAccountOption, Campaign, CampaignDetail, CampaignStatus, CopyOptions, CopyResult, Kpis } from '../../lib/types';
 import { useDateRangeParam } from '../../lib/url-state';
+import { metaAdsManagerUrl, metaPageAdsCenterUrl } from '../../lib/ads-manager';
+import { describeSchedule } from '../../lib/schedule';
 import { reviewCreative } from '../create-campaign/brief';
 import { AccountAdvisor, type AccountChoice } from './AccountAdvisor';
 import { AdStudio, type Launch } from './AdStudio';
@@ -107,6 +109,18 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
   const bestAccount = detail.advice.accounts.find((a) => a.recommended);
 
   const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
+  const navigate = useNavigate();
+
+  const refreshStatus = useMutation({
+    mutationFn: () => api.campaigns.refreshStatus(campaign.id),
+    onSuccess: () => invalidateCampaignViews(queryClient),
+  });
+
+  const clone = useMutation({
+    mutationFn: () => api.campaigns.cloneToDraft(campaign.id),
+    onSuccess: (draft) => navigate(`/campaigns/new?draft=${draft.id}`),
+  });
+
   const update = useMutation({
     mutationFn: (changes: { status?: CampaignStatus; dailyBudget?: number }) => api.campaigns.update(campaign.id, changes),
     onSuccess: () => invalidateCampaignViews(queryClient),
@@ -181,7 +195,32 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
               </Meta>
             </dl>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+          <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
+            {editable && (
+              <>
+                <button
+                  type="button"
+                  disabled={refreshStatus.isPending}
+                  onClick={() => refreshStatus.mutate()}
+                  className="rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-ink hover:bg-ink/[0.04] disabled:opacity-50"
+                  title="Kiểm tra và cập nhật trạng thái mới nhất từ Meta"
+                >
+                  <Icon name="refresh" size={14} className={`mr-1 inline ${refreshStatus.isPending ? 'animate-spin' : ''}`} />
+                  {refreshStatus.isPending ? 'Đang đồng bộ...' : 'Làm mới'}
+                </button>
+                <button
+                  type="button"
+                  disabled={clone.isPending}
+                  onClick={() => clone.mutate()}
+                  className="rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-ink hover:bg-ink/[0.04] disabled:opacity-50"
+                  title="Nhân bản cấu hình sang bản nháp mới để sửa và tạo lại"
+                >
+                  <Icon name="copy" size={14} className="mr-1 inline" />
+                  Sửa & tạo lại
+                </button>
+              </>
+            )}
+
             <div className="rounded-xl border border-line bg-surface px-3 py-2">
               <p className="eyebrow">Ngân sách/ngày</p>
               <div className="mt-0.5 text-base font-semibold">
@@ -194,25 +233,38 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
                 />
               </div>
             </div>
+
             {editable && (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={campaign.status === 'ACTIVE'}
-                disabled={!campaign.connected || busy}
-                onClick={() => update.mutate({ status: campaign.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' })}
-                className="flex items-center gap-2.5 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm font-medium disabled:opacity-45"
-              >
-                <span
-                  aria-hidden
-                  className={`flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${
-                    campaign.status === 'ACTIVE' ? 'justify-end bg-positive' : 'justify-start bg-line-strong'
-                  }`}
+              campaign.platform === 'facebook' && campaign.status === 'PAUSED' ? (
+                <a
+                  href={metaAdsManagerUrl(campaign.accountId, campaign.externalId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                  title="Kích hoạt trực tiếp trên Meta Ads Manager (Quy tắc R3)"
                 >
-                  <span className="h-5 w-5 rounded-full bg-white shadow-soft" />
-                </span>
-                {campaign.status === 'ACTIVE' ? 'Đang chạy' : 'Đang tắt'}
-              </button>
+                  Bật trên Meta ↗
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={campaign.status === 'ACTIVE'}
+                  disabled={!campaign.connected || busy}
+                  onClick={() => update.mutate({ status: campaign.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' })}
+                  className="flex items-center gap-2.5 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm font-medium disabled:opacity-45"
+                >
+                  <span
+                    aria-hidden
+                    className={`flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${
+                      campaign.status === 'ACTIVE' ? 'justify-end bg-positive' : 'justify-start bg-line-strong'
+                    }`}
+                  >
+                    <span className="h-5 w-5 rounded-full bg-white shadow-soft" />
+                  </span>
+                  {campaign.status === 'ACTIVE' ? 'Đang chạy' : 'Đang tắt'}
+                </button>
+              )
             )}
           </div>
         </div>
@@ -256,6 +308,106 @@ function DetailContent({ detail, range }: { detail: CampaignDetail; range: { fro
           </section>
 
           <AccountAdvisor detail={detail} canManage={editable} busy={busy} onChoose={onChoose} />
+
+          {/* Dark Posts per Page Section (Facebook Lifecycle) */}
+          {(campaign.pages?.length || campaign.meta?.ads?.length) ? (
+            <section className="card-pad">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="section-title">Danh sách Trang & Quảng cáo Dark Post</h2>
+                  <p className="mt-1 text-xs text-muted">Mỗi Trang Fanpage chạy một quảng cáo bài viết ẩn độc lập</p>
+                </div>
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                  {campaign.meta?.ads?.length ?? campaign.pages?.length ?? 0} quảng cáo
+                </span>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-line bg-ink/[0.02] text-muted font-semibold">
+                    <tr>
+                      <th className="py-2.5 px-3">Trang Fanpage</th>
+                      <th className="py-2.5 px-3">Meta Ad ID</th>
+                      <th className="py-2.5 px-3">Kiểm duyệt Meta</th>
+                      <th className="py-2.5 px-3 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {(campaign.meta?.ads ?? []).map((ad) => {
+                      const page = campaign.pages?.find((p) => p.id === ad.pageId);
+                      const reviewStatus = ad.review?.status ?? 'APPROVED';
+                      return (
+                        <tr key={ad.adId} className="hover:bg-ink/[0.01]">
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-ink">{page?.name ?? ad.pageId}</div>
+                            <div className="text-[11px] text-muted">Page ID: {ad.pageId}</div>
+                          </td>
+                          <td className="py-3 px-3 font-mono text-muted">{ad.adId}</td>
+                          <td className="py-3 px-3">
+                            {reviewStatus === 'APPROVED' && (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                Đã phê duyệt
+                              </span>
+                            )}
+                            {reviewStatus === 'PENDING' && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                Đang xét duyệt
+                              </span>
+                            )}
+                            {reviewStatus === 'DISAPPROVED' && (
+                              <div>
+                                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-300">
+                                  Từ chối
+                                </span>
+                                {ad.review?.reason && (
+                                  <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">
+                                    {ad.review.reason}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <a
+                              href={metaPageAdsCenterUrl(ad.pageId)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-accent hover:underline font-medium"
+                            >
+                              Trung tâm QC ↗
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {/* Schedule & Audience Info */}
+          {(campaign.schedule || campaign.audience) ? (
+            <section className="card-pad">
+              <h2 className="section-title">Lịch chạy & Đối tượng mục tiêu</h2>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 text-xs">
+                {campaign.schedule && (
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <div className="font-semibold text-ink">Lịch trình chiến dịch</div>
+                    <div className="mt-1 text-muted">{describeSchedule(campaign.schedule)}</div>
+                  </div>
+                )}
+                {campaign.audience && (
+                  <div className="rounded-xl border border-line bg-surface p-3">
+                    <div className="font-semibold text-ink">Đối tượng</div>
+                    <div className="mt-1 text-muted">
+                      {campaign.audience.locations === 'VN' ? 'Toàn quốc' : `${campaign.audience.locations.length} tỉnh thành`} • {campaign.audience.ageMin}–{campaign.audience.ageMax} tuổi
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
 
           <PerformanceChart detail={detail} />
 

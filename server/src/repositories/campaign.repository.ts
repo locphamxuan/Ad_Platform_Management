@@ -22,8 +22,12 @@ export class CampaignRepository {
     return this.collection.find(query, WITHOUT_ID).sort({ createdAt: -1 }).toArray();
   }
 
+  async findById(id: string): Promise<Campaign | null> {
+    return this.collection.findOne({ id }, WITHOUT_ID);
+  }
+
   async getById(id: string): Promise<Campaign> {
-    const campaign = await this.collection.findOne({ id }, WITHOUT_ID);
+    const campaign = await this.findById(id);
     if (!campaign) throw new NotFoundError('Campaign', id);
     return campaign;
   }
@@ -33,7 +37,7 @@ export class CampaignRepository {
     return campaign;
   }
 
-  async update(id: string, changes: Partial<Pick<Campaign, 'status' | 'dailyBudget' | 'unifiedCampaignId' | 'replacedBy'>>): Promise<Campaign> {
+  async update(id: string, changes: Partial<Campaign>): Promise<Campaign> {
     const updated = await this.collection.findOneAndUpdate(
       { id },
       { $set: changes },
