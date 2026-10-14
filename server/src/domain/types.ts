@@ -109,7 +109,7 @@ export interface CampaignDraftPayload {
   objective: Objective;
   platforms: Platform[];
   totalDailyBudget: number;
-  allocations: Array<{ platform: Platform; percentage: number }>;
+  allocations: Array<{ platform: Platform; percentage?: number; percent?: number }>;
   creative: Creative;
   pages: PageRef[];
   audience: Audience;

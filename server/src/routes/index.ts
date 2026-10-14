@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, json } from 'express';
 import { z } from 'zod';
 import type { Container } from '../container.js';
 import { allocateBudget } from '../domain/budget.js';
@@ -21,14 +21,17 @@ import {
   campaignListQuerySchema,
   campaignPatchSchema,
   changePasswordSchema,
+  createDraftSchema,
   createUserSchema,
   dateRangeSchema,
   copyCampaignSchema,
   loginSchema,
+  mediaUploadSchema,
   platformSchema,
   ruleSchema,
   settingsSchema,
   unifiedCampaignSchema,
+  updateDraftSchema,
   updateProfileSchema,
   updateUserSchema,
 } from './schemas.js';
@@ -169,6 +172,90 @@ export function createApiRouter(c: Container, loginLimiter = new LoginLimiter())
       assertDailyBudgetAllowed(user.role, limit, dailyBudget);
     }
     res.status(201).json(await c.unifiedCampaigns.create(input, userActor(user)));
+  }));
+
+  // Media asset routes
+  router.post('/media', requirePermission('campaign:manage'), json({ limit: '6mb' }), asyncHandler(async (req, res) => {
+    const user = currentUser(res);
+    const { fileName, dataBase64 } = mediaUploadSchema.parse(req.body);
+    const buffer = Buffer.from(dataBase64, 'base64');
+    const asset = await c.media.upload(user.id, { fileName, data: buffer });
+    res.status(201).json(asset);
+  }));
+  router.get('/media/:id', asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const { data, mimeType } = await c.media.getImageBuffer(id);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(data);
+  }));
+
+  // Meta helpers
+  router.get('/meta/pages', requirePermission('campaign:view'), asyncHandler(async (_req, res) => {
+    await c.integrations.assertConnected('facebook');
+    const adapter = c.integrations.getAdapter('facebook');
+    res.json(adapter.listPages ? await adapter.listPages() : []);
+  }));
+  router.get('/meta/locations', requirePermission('campaign:view'), asyncHandler(async (req, res) => {
+    const query = String(req.query.q || '');
+    const adapter = c.integrations.getAdapter('facebook');
+    res.json(adapter.searchLocations ? await adapter.searchLocations(query) : []);
+  }));
+  router.get('/meta/account-health', requirePermission('campaign:view'), asyncHandler(async (_req, res) => {
+    await c.integrations.assertConnected('facebook');
+    const adapter = c.integrations.getAdapter('facebook');
+    res.json(adapter.accountHealth ? await adapter.accountHealth() : { healthy: true, active: true });
+  }));
+
+  // Campaign lifecycle actions
+  router.post('/campaigns/:id/refresh-status', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.json(await c.campaigns.refreshStatus(id, userActor(currentUser(res))));
+  }));
+  router.post('/campaigns/:id/clone-to-draft', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.status(201).json(await c.drafts.cloneFromCampaign(id, currentUser(res)));
+  }));
+
+  // Campaign drafts
+  router.get('/campaign-drafts', requirePermission('campaign:view'), asyncHandler(async (_req, res) => {
+    res.json(await c.drafts.listDrafts(currentUser(res)));
+  }));
+  router.post('/campaign-drafts', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const input = createDraftSchema.parse(req.body);
+    res.status(201).json(await c.drafts.createDraft(currentUser(res).id, input));
+  }));
+  router.get('/campaign-drafts/:id', requirePermission('campaign:view'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.json(await c.drafts.getDraft(id, currentUser(res)));
+  }));
+  router.put('/campaign-drafts/:id', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const input = updateDraftSchema.parse(req.body);
+    res.json(await c.drafts.updateDraft(id, currentUser(res), input));
+  }));
+  router.delete('/campaign-drafts/:id', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    await c.drafts.deleteDraft(id, currentUser(res));
+    res.status(204).end();
+  }));
+  router.post('/campaign-drafts/:id/check', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.json(await c.drafts.check(id, currentUser(res)));
+  }));
+  router.post('/campaign-drafts/:id/previews', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.json(await c.drafts.previews(id, currentUser(res)));
+  }));
+  router.post('/campaign-drafts/:id/submit', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    const user = currentUser(res);
+    const campaign = await c.drafts.submit(id, user, userActor(user));
+    res.status(201).json(campaign);
+  }));
+  router.post('/campaign-drafts/:id/reconcile', requirePermission('campaign:manage'), asyncHandler(async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    res.json(await c.drafts.reconcile(id, currentUser(res)));
   }));
 
   router.get('/rules', requirePermission('rule:view'), asyncHandler(async (_req, res) => {

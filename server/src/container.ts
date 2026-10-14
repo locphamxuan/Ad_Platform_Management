@@ -7,8 +7,10 @@ import { PlatformRegistry } from './adapters/platform-registry.js';
 import { TikTokAdsAdapter } from './adapters/tiktok/tiktok-ads.adapter.js';
 import { platformCredentials, type PlatformCredentials } from './config/env.js';
 import { ActivityRepository } from './repositories/activity.repository.js';
+import { CampaignDraftRepository } from './repositories/campaign-draft.repository.js';
 import { CampaignRepository } from './repositories/campaign.repository.js';
 import { IntegrationRepository } from './repositories/integration.repository.js';
+import { MediaRepository } from './repositories/media.repository.js';
 import { MetricRepository } from './repositories/metric.repository.js';
 import { NotificationRepository } from './repositories/notification.repository.js';
 import { RuleRepository } from './repositories/rule.repository.js';
@@ -20,7 +22,9 @@ import { ActivityService } from './services/activity.service.js';
 import { AuthService } from './services/auth.service.js';
 import { CampaignService } from './services/campaign.service.js';
 import { DashboardService } from './services/dashboard.service.js';
+import { DraftService } from './services/draft.service.js';
 import { IntegrationService } from './services/integration.service.js';
+import { MediaService } from './services/media.service.js';
 import { NotificationService } from './services/notification.service.js';
 import { RuleEngineService } from './services/rule-engine.service.js';
 import { SettingsService } from './services/settings.service.js';
@@ -42,6 +46,8 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
   const repositories = {
     integrations: new IntegrationRepository(db),
     campaigns: new CampaignRepository(db),
+    campaignDrafts: new CampaignDraftRepository(db),
+    media: new MediaRepository(db),
     metrics: new MetricRepository(db),
     rules: new RuleRepository(db),
     activities: new ActivityRepository(db),
@@ -54,7 +60,9 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
   const activity = new ActivityService(repositories.activities);
   const notifications = new NotificationService(repositories.notifications, repositories.users);
   const integrations = new IntegrationService(repositories.integrations, registry, activity);
+  const settings = new SettingsService(repositories.settings, activity);
   const advisor = new AccountAdvisorService(repositories.campaigns, repositories.metrics, integrations, registry);
+  const media = new MediaService(repositories.media);
   const campaigns = new CampaignService(
     repositories.campaigns,
     repositories.metrics,
@@ -64,6 +72,16 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
     notifications,
     advisor,
   );
+  const drafts = new DraftService(
+    repositories.campaignDrafts,
+    repositories.campaigns,
+    media,
+    registry,
+    integrations,
+    advisor,
+    settings,
+    activity,
+  );
 
   return {
     repositories,
@@ -71,9 +89,11 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
     notifications,
     auth: new AuthService(repositories.users, repositories.sessions),
     users: new UserService(repositories.users, repositories.sessions, activity),
-    settings: new SettingsService(repositories.settings, activity),
+    settings,
     integrations,
     campaigns,
+    drafts,
+    media,
     dashboard: new DashboardService(repositories.campaigns, repositories.metrics, registry, integrations),
     unifiedCampaigns: new UnifiedCampaignService(registry, integrations, repositories.campaigns, activity, advisor),
     rules: new RuleEngineService(
@@ -84,7 +104,7 @@ export function createContainer(db: Db, credentials: Partial<PlatformCredentials
       registry,
       activity,
     ),
-    sync: new SyncService(repositories.campaigns, repositories.metrics, registry, integrations),
+    sync: new SyncService(repositories.campaigns, repositories.metrics, registry, integrations, activity),
   };
 }
 

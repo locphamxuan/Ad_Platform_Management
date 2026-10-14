@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FacebookAdsAdapter, toDailyMetrics } from '../src/adapters/meta/facebook-ads.adapter.js';
+import { FacebookAdsAdapter } from '../src/adapters/meta/facebook-ads.adapter.js';
 import type { MetaConfig } from '../src/config/env.js';
-import type { Campaign } from '../src/domain/types.js';
 import { AppError } from '../src/domain/errors.js';
 
 const CONFIG: MetaConfig = {
@@ -41,8 +40,8 @@ describe('FacebookAdsAdapter - Campaign Lifecycle & Rules R1-R7', () => {
       'POST act_111/adimages': { images: { 'banner.jpg': { hash: 'hash_abc123' } } },
       'POST act_111/campaigns': { id: '9001' },
       'POST act_111/adsets': { id: '9002' },
-      'POST act_111/adcreatives': (call) => ({ id: `creative_${call.params.name?.slice(-6)}` }),
-      'POST act_111/ads': (call) => ({ id: `ad_${call.params.name?.slice(-6)}` }),
+      'POST act_111/adcreatives': (call: Call) => ({ id: `creative_${call.params.name?.slice(-6)}` }),
+      'POST act_111/ads': (call: Call) => ({ id: `ad_${call.params.name?.slice(-6)}` }),
       'GET 9001': {
         id: '9001',
         name: 'Chiến Dịch Mùa Thu [AH-tag123]',
@@ -139,7 +138,7 @@ describe('FacebookAdsAdapter - Campaign Lifecycle & Rules R1-R7', () => {
         return { id: 'creative_1' };
       },
       'POST act_111/ads': { id: 'ad_1' },
-      'DELETE 9001': (call) => {
+      'DELETE 9001': (call: Call) => {
         deletedCampaignId = call.path;
         return { success: true };
       },

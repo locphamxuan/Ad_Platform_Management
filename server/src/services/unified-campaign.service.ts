@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import type { Campaign, Creative, Objective, Platform } from '../domain/types.js';
+import type {
+  Audience,
+  Campaign,
+  CampaignSchedule,
+  Creative,
+  Objective,
+  PageRef,
+  Platform,
+  SpecialCategory,
+} from '../domain/types.js';
 import { allocateBudget, type BudgetAllocationInput } from '../domain/budget.js';
 import { AppError } from '../domain/errors.js';
 import { formatVnd } from '../domain/format.js';
@@ -15,6 +24,10 @@ export interface CreateUnifiedCampaignInput {
   totalDailyBudget: number;
   allocations: BudgetAllocationInput[];
   creative: Creative;
+  pages?: PageRef[];
+  audience?: Audience;
+  schedule?: CampaignSchedule;
+  specialCategory?: SpecialCategory;
 }
 
 export type PlatformPublishResult =
@@ -78,6 +91,10 @@ export class UnifiedCampaignService {
         dailyBudget,
         creative: input.creative,
         accountId: best?.id,
+        pages: input.pages,
+        audience: input.audience,
+        schedule: input.schedule,
+        specialCategory: input.specialCategory,
       });
       const campaign = await this.campaigns.insert({
         id: randomUUID(),
@@ -91,6 +108,11 @@ export class UnifiedCampaignService {
         unifiedCampaignId,
         creative: input.creative,
         accountId: best?.id,
+        pages: input.pages,
+        audience: input.audience,
+        schedule: input.schedule,
+        specialCategory: input.specialCategory,
+        meta: created.meta ? { ...created.meta, syncedAt: new Date().toISOString() } : undefined,
         createdAt: new Date().toISOString(),
       });
       const account = best && {
