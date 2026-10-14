@@ -1,7 +1,10 @@
 import { allocateBudget, splitEvenly } from '../../lib/budget';
 import type { CreateUnifiedCampaignInput, Objective, Platform } from '../../lib/types';
 
-export type CampaignDraft = Pick<CreateUnifiedCampaignInput, 'name' | 'objective' | 'totalDailyBudget' | 'creative'>;
+export type CampaignDraft = Pick<
+  CreateUnifiedCampaignInput,
+  'name' | 'objective' | 'totalDailyBudget' | 'creative'
+>;
 
 interface Template {
   objective: Objective;
@@ -28,7 +31,8 @@ export const TEMPLATES: readonly Template[] = [
     name: 'Ra mắt bộ sưu tập mới {month}',
     slug: 'bst-moi',
     headline: 'Bộ sưu tập mới đã lên kệ',
-    primaryText: 'Khám phá những mẫu mới nhất tháng {month}: thiết kế tinh gọn, chất liệu bền đẹp, giá chỉ từ 199.000đ.',
+    primaryText:
+      'Khám phá những mẫu mới nhất tháng {month}: thiết kế tinh gọn, chất liệu bền đẹp, giá chỉ từ 199.000đ.',
     path: '/san-pham-moi',
   },
   {
@@ -45,7 +49,8 @@ export const TEMPLATES: readonly Template[] = [
     name: 'Nhận diện thương hiệu {month}',
     slug: 'thuong-hieu',
     headline: 'Chất lượng bạn tin, giá trị bạn xứng đáng',
-    primaryText: 'Hơn 10.000 khách hàng đã tin chọn. Cùng chúng tôi mang đến trải nghiệm mua sắm an tâm mỗi ngày.',
+    primaryText:
+      'Hơn 10.000 khách hàng đã tin chọn. Cùng chúng tôi mang đến trải nghiệm mua sắm an tâm mỗi ngày.',
     path: '/gioi-thieu',
   },
   {
@@ -53,7 +58,8 @@ export const TEMPLATES: readonly Template[] = [
     name: 'Mua 1 tặng 1 {month}',
     slug: 'mua-1-tang-1',
     headline: 'Mua 1 tặng 1 – Chỉ trong tuần này',
-    primaryText: 'Mua bất kỳ sản phẩm nào trong danh mục ưu đãi, nhận ngay 1 sản phẩm cùng loại miễn phí. Áp dụng đến hết Chủ nhật.',
+    primaryText:
+      'Mua bất kỳ sản phẩm nào trong danh mục ưu đãi, nhận ngay 1 sản phẩm cùng loại miễn phí. Áp dụng đến hết Chủ nhật.',
     path: '/mua-1-tang-1',
   },
 ];
@@ -74,7 +80,13 @@ interface SuggestOptions {
 }
 
 /** A complete, valid campaign ready to submit: every channel gets at least its minimum and stays within the cap. */
-export function suggestCampaign({ index, now, platforms, minBudget, limit }: SuggestOptions): CampaignDraft {
+export function suggestCampaign({
+  index,
+  now,
+  platforms,
+  minBudget,
+  limit,
+}: SuggestOptions): CampaignDraft {
   const template = TEMPLATES[((index % TEMPLATES.length) + TEMPLATES.length) % TEMPLATES.length];
   const month = `${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
   const fill = (text: string) => text.replaceAll('{month}', month);
@@ -108,7 +120,11 @@ function pickTotalBudget(
     allocateBudget(
       total,
       platforms.map((platform) => ({ platform, percent: shares[platform] ?? 0 })),
-    ).every((a) => a.dailyBudget >= (minBudget.get(a.platform) ?? 0) && (limit === null || a.dailyBudget <= limit));
+    ).every(
+      (a) =>
+        a.dailyBudget >= (minBudget.get(a.platform) ?? 0) &&
+        (limit === null || a.dailyBudget <= limit),
+    );
 
   const start = index % TOTAL_BUDGETS.length;
   const ordered = [...TOTAL_BUDGETS.slice(start), ...TOTAL_BUDGETS.slice(0, start)];
