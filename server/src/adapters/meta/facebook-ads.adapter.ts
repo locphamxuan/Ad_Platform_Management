@@ -70,7 +70,11 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
 
   /** Page posts must be written with the Page's own token, which the user token can hand out. */
   private async pageGraph(): Promise<MetaGraphClient> {
-    const page = await this.graph.get<{ access_token?: string }>(this.config.pageId, { fields: 'access_token' });
+    const pageId = this.config.pageId;
+    if (!pageId) {
+      throw new AppError('META_PAGE_TOKEN', 'Chưa cấu hình META_PAGE_ID');
+    }
+    const page = await this.graph.get<{ access_token?: string }>(pageId, { fields: 'access_token' });
     if (!page.access_token) {
       throw new AppError(
         'META_PAGE_TOKEN',

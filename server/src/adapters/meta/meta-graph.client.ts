@@ -22,6 +22,9 @@ export class MetaApiError extends AppError {
     message: string,
     public readonly metaCode?: number,
     public readonly fbtraceId?: string,
+    public readonly errorSubcode?: number,
+    public readonly errorUserTitle?: string,
+    public readonly errorUserMsg?: string,
   ) {
     super('META_API_ERROR', message, 502);
   }
@@ -87,5 +90,5 @@ function toMetaApiError(error: MetaErrorBody): MetaApiError {
   } else if (error.error_user_title && !message.startsWith(error.error_user_title)) {
     message = `${error.error_user_title}: ${message}`;
   }
-  return new MetaApiError(message, code, error.fbtrace_id);
+  return new MetaApiError(message, code, error.fbtrace_id, error.error_subcode, error.error_user_title, error.error_user_msg);
 }
