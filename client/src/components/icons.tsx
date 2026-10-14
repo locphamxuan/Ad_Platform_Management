@@ -58,6 +58,7 @@ const PATHS = {
   square: 'M4 4h16v16H4z',
   phone: 'M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm4 17h2',
   rectangle: 'M2 6h20v12H2z',
+  fileText: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
   wallet: 'M20 7H5a2 2 0 0 1 0-4h14v4Zm0 0v13H5a2 2 0 0 1-2-2V5m14 9h.01',
 } as const;
 

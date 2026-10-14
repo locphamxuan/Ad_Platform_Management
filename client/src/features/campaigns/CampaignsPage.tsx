@@ -25,7 +25,9 @@ import { useRowSelection } from '../../lib/selection';
 import { fold } from '../../lib/text';
 import type { BulkDeleteResult, BulkStatusResult, Campaign, CampaignStatus } from '../../lib/types';
 import { useDateRangeParam, useSearchParam, useTextParam } from '../../lib/url-state';
+import { metaAdsManagerUrl } from '../../lib/ads-manager';
 import { BudgetEditor } from './BudgetEditor';
+import { DraftsTab } from './DraftsTab';
 import { useApplyRecommendations } from './use-apply-recommendations';
 
 const PLATFORM_OPTIONS = [
@@ -49,6 +51,7 @@ const BULK_LIMIT = 200;
 
 export function CampaignsPage() {
   const { can, user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'drafts'>('campaigns');
   const { days, setDays, range } = useDateRangeParam();
   const [platform, setPlatform] = useSearchParam('platform', PLATFORM_OPTIONS.map((o) => o.value), 'all');
   const [status, setStatus] = useSearchParam('status', STATUS_OPTIONS.map((o) => o.value), 'all');
@@ -82,29 +85,61 @@ export function CampaignsPage() {
           can('campaign:manage') && (
             <Link to="/campaigns/new" className="btn-ai">
               <Icon name="wand" size={16} />
-              Tạo chiến dịch với AI
+              Tạo chiến dịch mới
             </Link>
           )
         }
       />
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <label className="relative min-w-[220px] flex-1 sm:max-w-xs">
-          <span className="sr-only">Tìm chiến dịch</span>
-          <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
-          <input
-            className="input pl-9"
-            type="search"
-            placeholder="Tìm theo tên hoặc mã…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
-        <Segmented label="Lọc theo nền tảng" value={platform} options={PLATFORM_OPTIONS} onChange={setPlatform} />
-        <Segmented label="Lọc theo trạng thái" value={status} options={STATUS_OPTIONS} onChange={setStatus} />
-        <div className="sm:ml-auto">
-          <DateRangePicker days={days} onChange={setDays} />
-        </div>
+
+      <div className="mb-5 flex border-b border-line">
+        <button
+          type="button"
+          onClick={() => setActiveTab('campaigns')}
+          className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+            activeTab === 'campaigns'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted hover:text-ink'
+          }`}
+        >
+          Tất cả chiến dịch
+        </button>
+        {can('campaign:manage') && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('drafts')}
+            className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+              activeTab === 'drafts'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            Bản nháp chiến dịch
+          </button>
+        )}
       </div>
+
+      {activeTab === 'drafts' ? (
+        <DraftsTab />
+      ) : (
+        <>
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <label className="relative min-w-[220px] flex-1 sm:max-w-xs">
+              <span className="sr-only">Tìm chiến dịch</span>
+              <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
+              <input
+                className="input pl-9"
+                type="search"
+                placeholder="Tìm theo tên hoặc mã…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            <Segmented label="Lọc theo nền tảng" value={platform} options={PLATFORM_OPTIONS} onChange={setPlatform} />
+            <Segmented label="Lọc theo trạng thái" value={status} options={STATUS_OPTIONS} onChange={setStatus} />
+            <div className="sm:ml-auto">
+              <DateRangePicker days={days} onChange={setDays} />
+            </div>
+          </div>
       <ErrorMessage error={error} />
       {isLoading && <Loading />}
       {data && (
@@ -125,6 +160,8 @@ export function CampaignsPage() {
             />
           )}
         </div>
+      )}
+        </>
       )}
     </>
   );
@@ -176,6 +213,10 @@ function CampaignTable({
     mutationFn: ({ id, changes }: { id: string; changes: { status?: CampaignStatus; dailyBudget?: number } }) =>
       api.campaigns.update(id, changes),
     onSuccess: () => invalidateCampaignViews(queryClient),
+  });
+  const clone = useMutation({
+    mutationFn: (id: string) => api.campaigns.cloneToDraft(id),
+    onSuccess: (draft) => navigate(`/campaigns/new?draft=${draft.id}`),
   });
   const afterBulk = (outcome: BulkOutcome) => {
     setBulkResult(outcome);
@@ -451,16 +492,42 @@ function CampaignTable({
                           <Icon name="wand" size={15} />
                         </button>
                       )}
+                      {c.platform === 'facebook' && c.status === 'PAUSED' ? (
+                        <a
+                          href={metaAdsManagerUrl(c.accountId, c.externalId)}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="btn-secondary btn-sm inline-flex items-center gap-1 text-blue-600 dark:text-blue-400"
+                          title="Kích hoạt trực tiếp trên Meta Ads Manager (Quy tắc an toàn R3)"
+                        >
+                          Bật trên Meta ↗
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`${c.status === 'ACTIVE' ? 'btn-secondary' : 'btn-primary'} btn-sm w-20`}
+                          disabled={!c.connected || busy}
+                          onClick={() =>
+                            update.mutate({ id: c.id, changes: { status: c.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' } })
+                          }
+                        >
+                          <Icon name={c.status === 'ACTIVE' ? 'pause' : 'play'} size={13} />
+                          {c.status === 'ACTIVE' ? 'Dừng' : 'Bật'}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className={`${c.status === 'ACTIVE' ? 'btn-secondary' : 'btn-primary'} btn-sm w-24`}
-                        disabled={!c.connected || busy}
-                        onClick={() =>
-                          update.mutate({ id: c.id, changes: { status: c.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' } })
-                        }
+                        className="btn-ghost btn-sm ml-1 w-8 px-0 text-subtle hover:text-ink"
+                        disabled={busy || clone.isPending}
+                        title="Sửa & tạo lại: nhân bản chiến dịch sang bản nháp mới"
+                        aria-label={`Sửa và tạo lại ${c.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clone.mutate(c.id);
+                        }}
                       >
-                        <Icon name={c.status === 'ACTIVE' ? 'pause' : 'play'} size={13} />
-                        {c.status === 'ACTIVE' ? 'Dừng' : 'Bật'}
+                        <Icon name="copy" size={14} />
                       </button>
                     </td>
                   )}

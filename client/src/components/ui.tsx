@@ -256,12 +256,31 @@ export function EmptyState({ title, children, icon = 'sparkles' }: { title: stri
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  required,
+  error,
+  warning,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  error?: string | null;
+  warning?: string;
+  children: ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="label">{label}</span>
+      <span className="label">
+        {label}
+        {required && <span className="ml-1 text-negative">*</span>}
+      </span>
       {children}
-      {hint && <span className="hint block">{hint}</span>}
+      {error && <span className="mt-1 block text-xs font-medium text-negative">{error}</span>}
+      {!error && warning && <span className="mt-1 block text-xs font-medium text-caution">{warning}</span>}
+      {hint && !error && <span className="hint block">{hint}</span>}
     </label>
   );
 }
