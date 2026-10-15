@@ -82,19 +82,27 @@ describe('MediaService and image parsing', () => {
     expect(() => parseImageDimensions(corrupt)).toThrow(ValidationError);
   });
 
-  it('rejects images below 600px', async () => {
-    const smallPng = createDummyPngBuffer(400, 400);
+  it('rejects images below 200px', async () => {
+    const smallPng = createDummyPngBuffer(150, 150);
     const svc = new MediaService(new FakeMediaRepo() as any);
     await expect(svc.upload('user-1', { fileName: 'small.png', data: smallPng })).rejects.toThrow(
-      /kích thước tối thiểu là 600x600px/,
+      /kích thước tối thiểu là 200x200px/,
     );
   });
 
-  it('rejects files larger than 4MB', async () => {
-    const hugeBuf = Buffer.alloc(4 * 1024 * 1024 + 1);
+  it('accepts rectangular Meta ad sizes (e.g. 1200x628 landscape)', async () => {
+    const rectJpeg = createDummyJpegBuffer(1200, 628);
+    const svc = new MediaService(new FakeMediaRepo() as any);
+    const asset = await svc.upload('user-1', { fileName: 'banner.jpg', data: rectJpeg });
+    expect(asset.width).toBe(1200);
+    expect(asset.height).toBe(628);
+  });
+
+  it('rejects files larger than 10MB', async () => {
+    const hugeBuf = Buffer.alloc(10 * 1024 * 1024 + 1);
     const svc = new MediaService(new FakeMediaRepo() as any);
     await expect(svc.upload('user-1', { fileName: 'huge.jpg', data: hugeBuf })).rejects.toThrow(
-      /vượt quá 4MB/,
+      /vượt quá 10MB/,
     );
   });
 

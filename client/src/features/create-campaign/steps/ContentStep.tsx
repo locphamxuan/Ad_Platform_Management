@@ -24,12 +24,22 @@ const CTA_OPTIONS = [
   { value: 'BOOK_TRAVEL', label: 'Đặt chỗ / Du lịch (BOOK_TRAVEL)' },
 ];
 
+const getRatioLabel = (w: number, h: number) => {
+  const ratio = w / h;
+  if (Math.abs(ratio - 1) <= 0.05) return 'Vuông 1:1 (Feed)';
+  if (Math.abs(ratio - 1.91) <= 0.15 || Math.abs(ratio - (16 / 9)) <= 0.1) return 'Ngang 1.91:1 / 16:9 (Web)';
+  if (Math.abs(ratio - (9 / 16)) <= 0.08) return 'Dọc 9:16 (Story/Reel)';
+  if (Math.abs(ratio - (4 / 5)) <= 0.08) return 'Dọc 4:5 (Feed Di Động)';
+  return 'Tùy chỉnh';
+};
+
 export function ContentStep({ payload, onChange, errors, warnings, expertMode }: ContentStepProps) {
   const pagesQuery = useQuery({ queryKey: ['meta', 'pages'], queryFn: api.meta.pages });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [imageMeta, setImageMeta] = useState<{ width: number; height: number; ratioLabel: string } | null>(null);
 
   const creative = payload.creative ?? { headline: '', primaryText: '', landingUrl: 'https://' };
   const selectedPages = payload.pages ?? [];
@@ -65,15 +75,46 @@ export function ContentStep({ payload, onChange, errors, warnings, expertMode }:
     onChange({ pages: [] });
   };
 
+  const checkDimensions = (file: File): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Không thể kiểm tra kích thước hình ảnh'));
+      };
+      img.src = url;
+    });
+  };
+
   const processFile = async (file: File) => {
     setUploadError(null);
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       setUploadError('Chỉ chấp nhận định dạng ảnh JPG, PNG hoặc WebP');
       return;
     }
-    if (file.size > 4 * 1024 * 1024) {
-      setUploadError('Dung lượng hình ảnh tối đa 4MB');
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('Dung lượng hình ảnh tối đa 10MB');
       return;
+    }
+
+    try {
+      const dims = await checkDimensions(file);
+      if (dims.width < 200 || dims.height < 200) {
+        setUploadError(`Kích thước hình ảnh tối thiểu là 200x200px (Ảnh bạn chọn: ${dims.width}x${dims.height}px)`);
+        return;
+      }
+      setImageMeta({
+        width: dims.width,
+        height: dims.height,
+        ratioLabel: getRatioLabel(dims.width, dims.height),
+      });
+    } catch {
+      // Continue to upload if dimension check in browser fails
     }
 
     setIsUploading(true);
@@ -229,13 +270,31 @@ export function ContentStep({ payload, onChange, errors, warnings, expertMode }:
         >
           {creative.imageId ? (
             <div className="flex flex-col items-center gap-3">
-              <div className="relative h-44 w-44 overflow-hidden rounded-lg border border-slate-200 shadow-sm dark:border-slate-700">
+              <div className="relative max-h-60 max-w-md overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm dark:border-slate-700 dark:bg-slate-800 flex items-center justify-center p-1">
                 <img
                   src={api.media.imageUrl(creative.imageId)}
                   alt="Creative"
-                  className="h-full w-full object-cover"
+                  className="max-h-56 w-auto object-contain rounded-md"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) {
+                      setImageMeta({
+                        width: img.naturalWidth,
+                        height: img.naturalHeight,
+                        ratioLabel: getRatioLabel(img.naturalWidth, img.naturalHeight),
+                      });
+                    }
+                  }}
                 />
               </div>
+              {imageMeta && (
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                  </svg>
+                  <span>{imageMeta.width} × {imageMeta.height} px • {imageMeta.ratioLabel}</span>
+                </div>
+              )}
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -246,7 +305,10 @@ export function ContentStep({ payload, onChange, errors, warnings, expertMode }:
                 </button>
                 <button
                   type="button"
-                  onClick={() => updateCreative({ imageId: undefined })}
+                  onClick={() => {
+                    updateCreative({ imageId: undefined });
+                    setImageMeta(null);
+                  }}
                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400"
                 >
                   Xoá hình ảnh
@@ -255,22 +317,50 @@ export function ContentStep({ payload, onChange, errors, warnings, expertMode }:
             </div>
           ) : (
             <div className="flex flex-col items-center">
-              <svg className="h-10 w-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                {isUploading ? 'Đang tải lên...' : 'Kéo thả hình ảnh vào đây hoặc click để chọn tệp'}
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="mt-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                {isUploading ? 'Đang tải lên và xử lý...' : 'Kéo thả hình ảnh vào đây hoặc click để chọn tệp'}
               </div>
               <div className="mt-1 text-xs text-slate-500">
-                Định dạng JPG, PNG hoặc WebP. Tối thiểu 600x600px, dung lượng tối đa 4MB.
+                Định dạng JPG, PNG hoặc WebP. Tối thiểu 200x200px, dung lượng tối đa 10MB.
               </div>
+
+              {/* Tỷ lệ đề xuất chuẩn Meta */}
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  📱 <strong>1:1 Vuông:</strong> 1080×1080 (Feed)
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  🖥️ <strong>1.91:1 Ngang:</strong> 1200×628 (Website/Link)
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  📲 <strong>9:16 Dọc:</strong> 1080×1920 (Story/Reel)
+                </span>
+              </div>
+
               <button
                 type="button"
                 disabled={isUploading}
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-3 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                className="mt-3.5 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
-                Chọn tệp từ máy tính
+                {isUploading ? (
+                  <>
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Đang tải lên...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Chọn tệp ảnh từ máy tính
+                  </>
+                )}
               </button>
             </div>
           )}

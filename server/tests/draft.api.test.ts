@@ -129,8 +129,8 @@ describe.skipIf(!mongoUp)('Campaign Lifecycle & Dark Post API (R1 - R8)', () => 
       expect(res.body.id).toBe(uploadedImageId);
     });
 
-    it('rejects image smaller than 600x600', async () => {
-      const smallPng = createDummyPngBuffer(400, 400);
+    it('rejects image smaller than 200x200', async () => {
+      const smallPng = createDummyPngBuffer(150, 150);
       const res = await call('/media', {
         method: 'POST',
         token: tokens.buyer,
@@ -141,7 +141,7 @@ describe.skipIf(!mongoUp)('Campaign Lifecycle & Dark Post API (R1 - R8)', () => 
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.message).toMatch(/kích thước tối thiểu là 600x600px/i);
+      expect(res.body.message).toMatch(/kích thước tối thiểu là 200x200px/i);
     });
 
     it('rejects invalid or corrupted image bytes', async () => {

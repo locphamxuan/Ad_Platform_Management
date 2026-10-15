@@ -108,23 +108,24 @@ export class MediaService {
   /**
    * Validates and saves an image asset.
    * Constraints:
-   * - Max size: 4MB
-   * - Min dimensions: 600px x 600px
+   * - Max size: 10MB
+   * - Min dimensions: 200px x 200px (Meta standard)
+   * - Supported ratios: 1:1 (Square), 1.91:1 (Landscape), 9:16 (Vertical Stories/Reels), 4:5
    * - Allowed types: JPEG, PNG, WebP
    */
   async upload(
     ownerId: string,
     file: { fileName: string; data: Buffer },
   ): Promise<MediaAsset> {
-    const MAX_SIZE = 4 * 1024 * 1024; // 4MB
+    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
     if (file.data.length > MAX_SIZE) {
-      throw new ValidationError('Không tải được hình — dung lượng vượt quá 4MB');
+      throw new ValidationError('Không tải được hình — dung lượng vượt quá 10MB');
     }
 
     const { mimeType, width, height } = parseImageDimensions(file.data);
 
-    if (width < 600 || height < 600) {
-      throw new ValidationError(`Không tải được hình — kích thước tối thiểu là 600x600px (hiện tại: ${width}x${height}px)`);
+    if (width < 200 || height < 200) {
+      throw new ValidationError(`Không tải được hình — kích thước tối thiểu là 200x200px (hiện tại: ${width}x${height}px)`);
     }
 
     const sha256 = createHash('sha256').update(file.data).digest('hex');
