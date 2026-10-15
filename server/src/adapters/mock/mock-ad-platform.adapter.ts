@@ -77,8 +77,8 @@ export class MockAdPlatformAdapter implements IAdPlatformAdapter {
 
   async listPages(): Promise<PageRef[]> {
     return [
-      { id: 'mock_page_1', name: 'AdHub Official Fanpage', hasInstagram: true, isAdvertisingAllowed: true },
-      { id: 'mock_page_2', name: 'AdHub Thương Mại & Dịch Vụ', hasInstagram: false, isAdvertisingAllowed: true },
+      { id: '1371022039427716', name: 'Bosa Group', hasInstagram: true, isAdvertisingAllowed: true },
+      { id: 'mock_page_2', name: 'Bosa Group Thương Mại & Dịch Vụ', hasInstagram: false, isAdvertisingAllowed: true },
       { id: 'mock_page_blocked', name: 'Trang Không Hợp Lệ (Demo Lỗi)', hasInstagram: false, isAdvertisingAllowed: false },
     ];
   }

@@ -155,7 +155,7 @@ const PRESET_TEMPLATES = [
     dailyBudget: 2_000_000,
     headline: 'Sở hữu căn hộ nghỉ dưỡng Phú Quốc view biển — Chỉ từ 1,8 tỷ',
     primaryText: 'Dự án căn hộ nghỉ dưỡng cao cấp ven biển Phú Quốc. Chiết khấu ngay 12% khi thanh toán sớm, ngân hàng hỗ trợ vay 70% ân hạn nợ gốc 24 tháng. Đăng ký nhận bảng giá và vé mời tham quan nhà mẫu ngay!',
-    landingUrl: 'https://baha-realestate.vn/phu-quoc',
+    landingUrl: 'https://bosa-realestate.vn/phu-quoc',
   },
   {
     title: 'Flash Sale Thời trang & Phụ kiện 50%',
@@ -166,7 +166,7 @@ const PRESET_TEMPLATES = [
     dailyBudget: 800_000,
     headline: 'Đại tiệc Flash Sale - Giảm đến 50% toàn bộ BST mới',
     primaryText: 'Cơ hội mua sắm lớn nhất mùa thu đông! Hơn 1.000 sản phẩm thời trang cao cấp giảm kịch sàn đến 50%. Miễn phí giao hàng toàn quốc cho đơn từ 499k. Đặt hàng ngay trước khi hết size!',
-    landingUrl: 'https://baha-fashion.vn/flash-sale',
+    landingUrl: 'https://bosa-fashion.vn/flash-sale',
   },
   {
     title: 'F&B Mừng Khai Trương — Tặng Voucher 100k',
@@ -176,8 +176,8 @@ const PRESET_TEMPLATES = [
     destination: 'MESSAGES',
     dailyBudget: 500_000,
     headline: 'Mừng khai trương chi nhánh mới — Nhận voucher 100k ngay!',
-    primaryText: 'Chào đón cơ sở mới tại Quận 1! BaHa Kitchen gửi tặng voucher ẩm thực trị giá 100.000đ cho tất cả khách hàng nhắn tin đặt bàn trước. Menu hơn 50 món Á - Âu đặc sắc chờ bạn khám phá.',
-    landingUrl: 'https://m.me/bahagroup',
+    primaryText: 'Chào đón cơ sở mới tại Quận 1! Bosa Kitchen gửi tặng voucher ẩm thực trị giá 100.000đ cho tất cả khách hàng nhắn tin đặt bàn trước. Menu hơn 50 món Á - Âu đặc sắc chờ bạn khám phá.',
+    landingUrl: 'https://m.me/bosagroup',
   },
   {
     title: 'Khóa học Kỹ năng số & Digital Marketing',
@@ -188,7 +188,7 @@ const PRESET_TEMPLATES = [
     dailyBudget: 600_000,
     headline: 'Khóa học Digital Marketing thực chiến 2026 — Từ cơ bản đến nâng cao',
     primaryText: 'Chương trình đào tạo thực chiến 30 ngày cùng chuyên gia hàng đầu. Nắm vững kỹ năng chạy ads Facebook, TikTok, Google và AI Automation. Xem chi tiết lộ trình và ưu đãi học phí sớm tại đây.',
-    landingUrl: 'https://baha-academy.vn/khoa-hoc-marketing',
+    landingUrl: 'https://bosa-academy.vn/khoa-hoc-marketing',
   },
 ];
 
@@ -268,7 +268,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
     const now = new Date();
     const dStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
     const objLabel = OBJECTIVE_LABELS[selectedObjective] || 'Ads';
-    const autoName = `BaHa-ADS-${objLabel.replace(/\s+/g, '')}-${dStr}`;
+    const autoName = `BosaGroup-ADS-${objLabel.replace(/\s+/g, '')}-${dStr}`;
     onChange({ name: autoName });
   };
 
@@ -309,7 +309,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
                 : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
-            🎲 Mẫu chiến dịch BaHa
+            🎲 Mẫu chiến dịch Bosa Group
           </button>
           <button
             type="button"
@@ -362,7 +362,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
             <div className="flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">🎲</span>
               <span className="text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300">
-                Chọn mẫu chiến dịch tối ưu sẵn có của BaHa
+                Chọn mẫu chiến dịch tối ưu sẵn có của Bosa Group
               </span>
             </div>
             <span className="text-[11px] text-slate-500">1-click áp dụng toàn bộ cấu hình mẫu</span>
@@ -451,7 +451,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
             </div>
           </div>
           <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-            Kinh nghiệm BaHa
+            Kinh nghiệm Bosa Group
           </span>
         </div>
 
@@ -789,7 +789,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
               {setupMode === 'recommended' && <span className="text-blue-600 font-bold">✓</span>}
             </div>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Tận dụng thuật toán tự động hóa thông minh của Meta để tối ưu hóa phân phối và chi phí theo chuẩn BaHa.
+              Tận dụng thuật toán tự động hóa thông minh của Meta để tối ưu hóa phân phối và chi phí theo chuẩn Bosa Group.
             </p>
           </button>
 
@@ -814,7 +814,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
 
         {setupMode === 'recommended' && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900/60">
-            <div className="font-semibold text-slate-800 dark:text-slate-200 mb-1.5">Giá trị BaHa đề xuất tự động:</div>
+            <div className="font-semibold text-slate-800 dark:text-slate-200 mb-1.5">Giá trị Bosa Group đề xuất tự động:</div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-[11px] text-slate-600 dark:text-slate-400">
               <div>• Ngân sách: <b>Linh hoạt theo ngày</b></div>
               <div>• Vị trí: <b>Advantage+ Placements</b></div>
@@ -879,7 +879,7 @@ export function GoalStep({ payload, onChange, errors, expertMode: _expertMode }:
             type="text"
             value={payload.name ?? ''}
             onChange={(e) => onChange({ name: e.target.value })}
-            placeholder="Ví dụ: BaHa-ADS-NhanDienThuongHieu-20261015"
+            placeholder="Ví dụ: BosaGroup-ADS-NhanDienThuongHieu-20261015"
             maxLength={120}
             className="flex-1 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500"
           />

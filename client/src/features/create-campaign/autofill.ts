@@ -64,7 +64,7 @@ export const TEMPLATES: readonly Template[] = [
   },
 ];
 
-const LANDING_SITE = 'https://bahagroup.vn';
+const LANDING_SITE = 'https://bosagroup.vn';
 const TOTAL_BUDGETS = [1_000_000, 2_000_000, 3_000_000, 5_000_000, 500_000];
 const pad = (n: number) => String(n).padStart(2, '0');
 

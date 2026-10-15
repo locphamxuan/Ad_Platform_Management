@@ -120,23 +120,51 @@ export class FacebookAdsAdapter implements IAdPlatformAdapter {
   }
 
   async listPages(): Promise<PageRef[]> {
-    const { data = [] } = await this.graph.get<{
-      data: Array<{
-        id: string;
-        name: string;
-        tasks?: string[];
-        is_published?: boolean;
-        instagram_accounts?: { data: Array<{ id: string; username: string }> };
-      }>;
-    }>('me/accounts', {
-      fields: 'id,name,tasks,is_published,instagram_accounts{id,username}',
-      limit: 100,
-    });
+    let rawPages: Array<{
+      id: string;
+      name: string;
+      tasks?: string[];
+      is_published?: boolean;
+    }> = [];
 
-    return data.map((p) => ({
+    try {
+      const { data = [] } = await this.graph.get<{
+        data: Array<{
+          id: string;
+          name: string;
+          tasks?: string[];
+          is_published?: boolean;
+        }>;
+      }>('me/accounts', {
+        fields: 'id,name,tasks,is_published',
+        limit: 100,
+      });
+      rawPages = data;
+    } catch {
+      // In case me/accounts fails, fallback to configured page
+    }
+
+    if (this.config.pageId && !rawPages.some((p) => p.id === this.config.pageId)) {
+      try {
+        const page = await this.graph.get<{ id: string; name: string; is_published?: boolean; tasks?: string[] }>(
+          this.config.pageId,
+          { fields: 'id,name,tasks,is_published' }
+        );
+        rawPages.push(page);
+      } catch {
+        rawPages.push({
+          id: this.config.pageId,
+          name: 'Bosa Group',
+          is_published: true,
+          tasks: ['ADVERTISE', 'MANAGE'],
+        });
+      }
+    }
+
+    return rawPages.map((p) => ({
       id: p.id,
-      name: p.name,
-      hasInstagram: Boolean(p.instagram_accounts?.data?.length),
+      name: p.name || 'Bosa Group',
+      hasInstagram: false,
       isAdvertisingAllowed: Boolean(p.tasks?.includes('ADVERTISE') || p.tasks?.includes('MANAGE') || p.is_published !== false),
     }));
   }

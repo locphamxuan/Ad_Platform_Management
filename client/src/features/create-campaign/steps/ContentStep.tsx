@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, useRef, type ChangeEvent, type DragEvent } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent, type DragEvent } from 'react';
 import { api } from '../../../lib/api';
 import type { CampaignDraftPayload, PageRef } from '../../../lib/types';
 import { Field } from '../../../components/ui';
@@ -34,6 +34,15 @@ export function ContentStep({ payload, onChange, errors, warnings, expertMode }:
   const creative = payload.creative ?? { headline: '', primaryText: '', landingUrl: 'https://' };
   const selectedPages = payload.pages ?? [];
   const isFbSelected = payload.platforms?.includes('facebook');
+
+  useEffect(() => {
+    if (isFbSelected && selectedPages.length === 0 && pagesQuery.data && pagesQuery.data.length > 0) {
+      const valid = pagesQuery.data.filter((p) => p.isAdvertisingAllowed !== false);
+      if (valid.length > 0) {
+        onChange({ pages: [valid[0]] });
+      }
+    }
+  }, [isFbSelected, selectedPages.length, pagesQuery.data, onChange]);
 
   const updateCreative = (patch: Partial<typeof creative>) => {
     onChange({ creative: { ...creative, ...patch } });
