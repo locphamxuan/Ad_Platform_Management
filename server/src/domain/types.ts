@@ -1,7 +1,7 @@
 export const PLATFORMS = ['facebook', 'tiktok', 'google'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
-export const OBJECTIVES = ['awareness', 'traffic', 'leads', 'sales'] as const;
+export const OBJECTIVES = ['awareness', 'traffic', 'engagement', 'leads', 'app_promotion', 'sales'] as const;
 export type Objective = (typeof OBJECTIVES)[number];
 
 export type CampaignStatus = 'ACTIVE' | 'PAUSED';
@@ -117,6 +117,14 @@ export interface CampaignDraftPayload {
   specialCategory: SpecialCategory;
   accountId?: string;
   acknowledgeNationwide?: boolean;
+
+  // Expert Mode & A/B testing extensions
+  buying_type?: 'AUCTION' | 'RESERVED';
+  setup_mode?: 'recommended' | 'manual';
+  ab_plan?: Record<string, any>;
+  placements?: Record<string, any>;
+  advanced?: Record<string, any>;
+  budget?: Record<string, any>;
 }
 
 export interface CheckLevelResult {

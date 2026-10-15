@@ -11,7 +11,9 @@ import { isPlatformCampaignId } from '../ad-platform.adapter.js';
 const OBJECTIVE_MAP: Record<Objective, string> = {
   awareness: 'REACH',
   traffic: 'TRAFFIC',
+  engagement: 'ENGAGEMENT',
   leads: 'LEAD_GENERATION',
+  app_promotion: 'APP_PROMOTION',
   // PRODUCT_SALES needs a TikTok Shop or catalog; website purchases use WEB_CONVERSIONS.
   sales: 'WEB_CONVERSIONS',
 };

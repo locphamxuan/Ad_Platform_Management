@@ -9,6 +9,7 @@ interface ContentStepProps {
   onChange: (patch: Partial<CampaignDraftPayload>) => void;
   errors?: Record<string, string>;
   warnings?: Record<string, string>;
+  expertMode?: boolean;
 }
 
 const CTA_OPTIONS = [
@@ -18,9 +19,12 @@ const CTA_OPTIONS = [
   { value: 'ORDER_NOW', label: 'Đặt hàng ngay' },
   { value: 'APPLY_NOW', label: 'Ứng tuyển ngay' },
   { value: 'GET_QUOTE', label: 'Nhận báo giá' },
+  { value: 'MESSAGING', label: 'Gửi tin nhắn (MESSAGING)' },
+  { value: 'SHOP_NOW', label: 'Mua ngay (SHOP_NOW)' },
+  { value: 'BOOK_TRAVEL', label: 'Đặt chỗ / Du lịch (BOOK_TRAVEL)' },
 ];
 
-export function ContentStep({ payload, onChange, errors, warnings }: ContentStepProps) {
+export function ContentStep({ payload, onChange, errors, warnings, expertMode }: ContentStepProps) {
   const pagesQuery = useQuery({ queryKey: ['meta', 'pages'], queryFn: api.meta.pages });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -325,6 +329,53 @@ export function ContentStep({ payload, onChange, errors, warnings }: ContentStep
           </select>
         </Field>
       </div>
+
+      {/* Expert Mode Technical Info & Lead Form */}
+      {expertMode && (
+        <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/20 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-amber-500/10 px-2 py-0.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Chuyên gia
+            </span>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Mã kỹ thuật Dark Post & Biểu mẫu Lead Form
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Loại bài viết (Content Delivery Type)">
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                <div className="font-semibold text-slate-900 dark:text-slate-100">
+                  Dark Post (Unpublished Page Post - R1–R7)
+                </div>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Bài viết quảng cáo ẩn, không hiển thị trên dòng thời gian công khai của Trang, tối ưu kiểm tra nhiều góc nội dung.
+                </div>
+              </div>
+            </Field>
+
+            <Field label="Biểu mẫu khách hàng tiềm năng (Lead Form ID)">
+              {payload.objective === 'leads' ? (
+                <input
+                  type="text"
+                  value={payload.advanced?.lead_form_id ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      advanced: { ...payload.advanced, lead_form_id: e.target.value || undefined },
+                    })
+                  }
+                  placeholder="Nhập mã Lead Form ID của Trang Facebook..."
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              ) : (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/60">
+                  Chỉ áp dụng khi mục tiêu là Thu thập khách hàng tiềm năng (Leads).
+                </div>
+              )}
+            </Field>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -26,14 +26,18 @@ import { mapMetaError } from './meta-errors.js';
 const OBJECTIVE_MAP: Record<Objective, string> = {
   awareness: 'OUTCOME_AWARENESS',
   traffic: 'OUTCOME_TRAFFIC',
+  engagement: 'OUTCOME_ENGAGEMENT',
   leads: 'OUTCOME_LEADS',
+  app_promotion: 'OUTCOME_APP_PROMOTION',
   sales: 'OUTCOME_SALES',
 };
 
 const AD_SET_GOALS: Record<Objective, { optimizationGoal: string; pixelEvent?: string }> = {
   awareness: { optimizationGoal: 'REACH' },
   traffic: { optimizationGoal: 'LINK_CLICKS' },
+  engagement: { optimizationGoal: 'POST_ENGAGEMENT' },
   leads: { optimizationGoal: 'OFFSITE_CONVERSIONS', pixelEvent: 'LEAD' },
+  app_promotion: { optimizationGoal: 'APP_INSTALLS' },
   sales: { optimizationGoal: 'OFFSITE_CONVERSIONS', pixelEvent: 'PURCHASE' },
 };
 

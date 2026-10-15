@@ -10,6 +10,7 @@ interface BudgetScheduleStepProps {
   errors?: Record<string, string>;
   warnings?: Record<string, string>;
   dailyBudgetLimit?: number | null;
+  expertMode?: boolean;
 }
 
 const BUDGET_PRESETS = [500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000];
@@ -20,6 +21,7 @@ export function BudgetScheduleStep({
   errors,
   warnings,
   dailyBudgetLimit,
+  expertMode,
 }: BudgetScheduleStepProps) {
   const totalBudget = payload.totalDailyBudget ?? 1_000_000;
   const allocations = payload.allocations ?? [{ platform: 'facebook', percentage: 100 }];
@@ -284,6 +286,79 @@ export function BudgetScheduleStep({
           </div>
         </div>
       </div>
+
+      {/* Expert Mode Budget Strategy & A/B Testing Card */}
+      {expertMode && (
+        <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/20 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-amber-500/10 px-2 py-0.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Chuyên gia
+            </span>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Tối ưu ngân sách Advantage (CBO) & Kích hoạt Thử nghiệm A/B
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* CBO vs ABO */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <label className="flex items-start justify-between cursor-pointer">
+                <div>
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Advantage Campaign Budget (CBO)
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    Phân bổ ngân sách ở cấp chiến dịch — thuật toán Meta sẽ tự động dồn ngân sách vào nhóm quảng cáo có cơ hội chuyển đổi tốt nhất.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={payload.budget?.cbo ?? true}
+                  onChange={(e) =>
+                    onChange({
+                      budget: { ...payload.budget, cbo: e.target.checked },
+                    })
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+              </label>
+            </div>
+
+            {/* A/B Testing Toggle */}
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+              <label className="flex items-start justify-between cursor-pointer">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                    <span>🔬</span>
+                    <span>Kích hoạt Thử nghiệm A/B (Split Test)</span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-indigo-800/80 dark:text-indigo-300/80">
+                    Khi bật, bước tiếp theo sẽ mở rộng thêm <b>Bước 5: Thử nghiệm A/B</b> để so sánh trực tiếp 2 biến thể theo chuẩn khoa học của Meta.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={payload.ab_plan?.enabled ?? false}
+                  onChange={(e) =>
+                    onChange({
+                      ab_plan: {
+                        ...(payload.ab_plan ?? {
+                          variable: 'content',
+                          splitRatio: 50,
+                          metric: 'cpa',
+                          variants: [],
+                        }),
+                        enabled: e.target.checked,
+                      },
+                    })
+                  }
+                  className="mt-1 h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

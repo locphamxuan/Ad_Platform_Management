@@ -4,6 +4,8 @@ import {
   validateStep2,
   validateStep3,
   validateStep4,
+  validateAbStep,
+  validateAdvancedStep,
   validateDraftAll,
 } from '../src/lib/draft-validation';
 import type { CampaignDraftPayload } from '../src/lib/types';
@@ -215,6 +217,66 @@ describe('draft-validation', () => {
       });
       expect(inverted.valid).toBe(false);
       expect(inverted.errors.endTime).toBeDefined();
+    });
+  });
+
+  describe('validateAbStep', () => {
+    it('passes if A/B testing is not enabled', () => {
+      const res = validateAbStep({ ab_plan: { enabled: false, variable: 'content', variants: [] } });
+      expect(res.valid).toBe(true);
+    });
+
+    it('validates variable selection and variants when enabled', () => {
+      const missingVar = validateAbStep({
+        ab_plan: {
+          enabled: true,
+          variable: '' as any,
+          variants: [],
+        },
+      });
+      expect(missingVar.valid).toBe(false);
+      expect(missingVar.errors.variable).toBeDefined();
+
+      const validAb = validateAbStep({
+        ab_plan: {
+          enabled: true,
+          variable: 'content',
+          variants: [
+            { key: 'A', name: 'Variant A', value: {} },
+            { key: 'B', name: 'Variant B', value: {} },
+          ],
+        },
+      });
+      expect(validAb.valid).toBe(true);
+    });
+  });
+
+  describe('validateAdvancedStep', () => {
+    it('passes for empty or default advanced config', () => {
+      const res = validateAdvancedStep({});
+      expect(res.valid).toBe(true);
+    });
+
+    it('requires bid amount when bid strategy is COST_CAP', () => {
+      const res = validateAdvancedStep({
+        advanced: {
+          bid_strategy: 'COST_CAP',
+          bid_amount: 0,
+        },
+      });
+      expect(res.valid).toBe(false);
+      expect(res.errors.bid_amount).toBeDefined();
+    });
+
+    it('requires placements list when mode is manual', () => {
+      const res = validateAdvancedStep({
+        placements: {
+          mode: 'manual',
+          list: [],
+        },
+      });
+      expect(res.valid).toBe(false);
+      expect(res.errors.placements).toBeDefined();
     });
   });
 

@@ -8,11 +8,12 @@ import type {
 } from '../ad-platform.adapter.js';
 import { isPlatformCampaignId } from '../ad-platform.adapter.js';
 
-/** Channel and bidding per objective. Performance Max needs asset groups, so sales use Search too. */
 const CAMPAIGN_SETUP: Record<Objective, { channel: 'SEARCH' | 'DISPLAY'; bidding: Record<string, object> }> = {
   awareness: { channel: 'DISPLAY', bidding: { manualCpc: {} } },
   traffic: { channel: 'SEARCH', bidding: { targetSpend: {} } },
+  engagement: { channel: 'DISPLAY', bidding: { manualCpc: {} } },
   leads: { channel: 'SEARCH', bidding: { maximizeConversions: {} } },
+  app_promotion: { channel: 'SEARCH', bidding: { maximizeConversions: {} } },
   sales: { channel: 'SEARCH', bidding: { maximizeConversions: {} } },
 };
 

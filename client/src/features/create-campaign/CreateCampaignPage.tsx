@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -10,22 +10,18 @@ import {
   validateStep2,
   validateStep3,
   validateStep4,
+  validateAbStep,
+  validateAdvancedStep,
 } from '../../lib/draft-validation';
 import { GoalStep } from './steps/GoalStep';
 import { ContentStep } from './steps/ContentStep';
 import { AudienceStep } from './steps/AudienceStep';
 import { BudgetScheduleStep } from './steps/BudgetScheduleStep';
+import { AbStudioStep } from './steps/AbStudioStep';
+import { AdvancedStudioStep } from './steps/AdvancedStudioStep';
 import { ReviewStep } from './steps/ReviewStep';
-import { generateCreatives, parseBrief } from './brief';
-import { suggestCampaign, TEMPLATES } from './autofill';
 
-const STEPS = [
-  { step: 1, title: 'Mục tiêu & Kênh' },
-  { step: 2, title: 'Nội dung & Trang' },
-  { step: 3, title: 'Đối tượng' },
-  { step: 4, title: 'Ngân sách & Lịch' },
-  { step: 5, title: 'Xác minh & Tạo' },
-];
+type StepId = 'goal' | 'content' | 'audience' | 'budget' | 'ab' | 'advanced' | 'review';
 
 const DEFAULT_PAYLOAD: CampaignDraftPayload = {
   name: '',
@@ -45,10 +41,25 @@ const DEFAULT_PAYLOAD: CampaignDraftPayload = {
     ageMin: 18,
     ageMax: 65,
     genders: ['MALE', 'FEMALE'],
+    detailedTargeting: [],
+    advantageExpansion: true,
   },
   schedule: {},
   specialCategory: 'NONE',
   acknowledgeNationwide: false,
+  buying_type: 'AUCTION',
+  setup_mode: 'recommended',
+  placements: { mode: 'preset', list: [] },
+  advanced: {
+    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+  },
+  ab_plan: {
+    enabled: false,
+    variable: 'content',
+    splitRatio: 50,
+    metric: 'cpa',
+    variants: [],
+  },
 };
 
 export function CreateCampaignPage() {
@@ -59,27 +70,74 @@ export function CreateCampaignPage() {
 
   const urlDraftId = searchParams.get('draft');
   const urlStep = Number(searchParams.get('step')) || 1;
+  const urlMode = searchParams.get('mode');
 
-  const [currentStep, setCurrentStep] = useState<number>(urlStep >= 1 && urlStep <= 5 ? urlStep : 1);
+  // Mode state: Simple vs Expert
+  const [expertMode, setExpertMode] = useState<boolean>(() => {
+    if (urlMode === 'expert') return true;
+    if (urlMode === 'simple') return false;
+    return localStorage.getItem('adhub_creator_mode') === 'expert';
+  });
+
   const [draft, setDraft] = useState<CampaignDraft | null>(null);
   const [payload, setPayload] = useState<CampaignDraftPayload>(DEFAULT_PAYLOAD);
   const [stepErrors, setStepErrors] = useState<Record<string, string>>({});
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  // AI Brief & Template autofill states
-  const [briefInput, setBriefInput] = useState('');
-  const [isAiBriefOpen, setIsAiBriefOpen] = useState(false);
-  const [templateIndex, setTemplateIndex] = useState(() => Math.floor(Math.random() * TEMPLATES.length));
+  // Dynamic steps calculation
+  const isAbEnabled = Boolean(payload.ab_plan?.enabled);
+  const activeSteps = useMemo(() => {
+    const list: Array<{ id: StepId; title: string; subtitle: string }> = [
+      { id: 'goal', title: 'Mục tiêu & Kênh', subtitle: 'Mục tiêu & Nền tảng' },
+      { id: 'content', title: 'Nội dung & Trang', subtitle: 'Trang & Mẫu Dark Post' },
+      { id: 'audience', title: 'Đối tượng', subtitle: 'Khu vực & Độ tuổi' },
+      { id: 'budget', title: 'Ngân sách & Lịch', subtitle: 'Chi phí & Lịch chạy' },
+    ];
+
+    if (isAbEnabled) {
+      list.push({ id: 'ab', title: 'Thử nghiệm A/B', subtitle: 'Thiết kế phương án A/B' });
+    }
+
+    if (expertMode || payload.setup_mode === 'manual') {
+      list.push({ id: 'advanced', title: 'Cài đặt nâng cao', subtitle: 'Vị trí & Giá thầu Meta' });
+    }
+
+    list.push({ id: 'review', title: 'Xác minh & Tạo', subtitle: 'Kiểm tra & Gửi duyệt' });
+    return list;
+  }, [isAbEnabled, expertMode, payload.setup_mode]);
+
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(() => {
+    const stepNum = urlStep >= 1 ? urlStep - 1 : 0;
+    return Math.min(stepNum, activeSteps.length - 1);
+  });
+
+  // Ensure current step index is within bounds when steps list changes
+  useEffect(() => {
+    if (currentStepIndex >= activeSteps.length) {
+      setCurrentStepIndex(activeSteps.length - 1);
+    }
+  }, [activeSteps.length, currentStepIndex]);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sync step to URL
-  const setStep = (step: number) => {
-    setCurrentStep(step);
+  const setStepNumber = (stepNum: number) => {
+    const nextIdx = Math.max(0, Math.min(stepNum - 1, activeSteps.length - 1));
+    setCurrentStepIndex(nextIdx);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      next.set('step', String(step));
+      next.set('step', String(nextIdx + 1));
+      return next;
+    });
+  };
+
+  const handleToggleMode = (isExpert: boolean) => {
+    setExpertMode(isExpert);
+    localStorage.setItem('adhub_creator_mode', isExpert ? 'expert' : 'simple');
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('mode', isExpert ? 'expert' : 'simple');
       return next;
     });
   };
@@ -95,21 +153,22 @@ export function CreateCampaignPage() {
     if (draftQuery.data) {
       setDraft(draftQuery.data);
       setPayload(draftQuery.data.payload);
-      if (urlStep) setCurrentStep(urlStep);
+      if (urlStep) {
+        setCurrentStepIndex(Math.max(0, Math.min(urlStep - 1, activeSteps.length - 1)));
+      }
     }
-  }, [draftQuery.data, urlStep]);
+  }, [draftQuery.data, urlStep, activeSteps.length]);
 
   // Autosave payload to server (debounce 1.5s) and localStorage
-  const triggerAutosave = (newPayload: CampaignDraftPayload, stepNum = currentStep) => {
+  const triggerAutosave = (newPayload: CampaignDraftPayload, stepNum = currentStepIndex + 1) => {
     setSaveStatus('saving');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         if (!draft) {
-          // Create draft on server
           const created = await api.drafts.create({
-            step: stepNum,
+            step: Math.min(stepNum, 7),
             payload: newPayload,
           });
           setDraft(created);
@@ -121,10 +180,9 @@ export function CreateCampaignPage() {
           });
           localStorage.setItem(`adhub_draft_${created.id}`, JSON.stringify(newPayload));
         } else {
-          // Update existing draft
           const updated = await api.drafts.update(draft.id, {
             revision: draft.revision,
-            step: stepNum,
+            step: Math.min(stepNum, 7),
             payload: newPayload,
           });
           setDraft(updated);
@@ -143,67 +201,25 @@ export function CreateCampaignPage() {
   const updatePayload = (patch: Partial<CampaignDraftPayload>) => {
     setPayload((prev) => {
       const next = { ...prev, ...patch };
-      triggerAutosave(next, currentStep);
+      triggerAutosave(next, currentStepIndex + 1);
       return next;
     });
     setStepErrors({});
   };
 
-  // AI Brief Quick Fill
-  const handleApplyBrief = () => {
-    if (!briefInput.trim()) return;
-    const brief = parseBrief(briefInput);
-    const variants = generateCreatives(brief);
-    const variant = variants[0];
-    const newPayload: CampaignDraftPayload = {
-      ...payload,
-      name: `${brief.product} ${new Date().toLocaleDateString('vi-VN')}`,
-      objective: brief.objective,
-      totalDailyBudget: brief.totalDailyBudget ?? payload.totalDailyBudget,
-      creative: {
-        headline: variant ? variant.headline : payload.creative.headline,
-        primaryText: variant ? variant.primaryText : payload.creative.primaryText,
-        landingUrl: brief.landingUrl ?? payload.creative.landingUrl,
-        cta: payload.creative.cta ?? 'LEARN_MORE',
-      },
-    };
-    updatePayload(newPayload);
-    setIsAiBriefOpen(false);
-    setBriefInput('');
-  };
-
-  // Autofill Template
-  const handleAutofillTemplate = () => {
-    const suggested = suggestCampaign({
-      index: templateIndex,
-      now: new Date(),
-      platforms: payload.platforms,
-      minBudget: new Map(),
-      limit: null,
-    });
-    setTemplateIndex((prev) => (prev + 1) % TEMPLATES.length);
-    const newPayload: CampaignDraftPayload = {
-      ...payload,
-      name: suggested.name,
-      objective: suggested.objective,
-      totalDailyBudget: suggested.totalDailyBudget,
-      creative: {
-        headline: suggested.creative.headline,
-        primaryText: suggested.creative.primaryText,
-        landingUrl: suggested.creative.landingUrl,
-        cta: payload.creative.cta ?? 'LEARN_MORE',
-      },
-    };
-    updatePayload(newPayload);
-  };
-
   // Step Navigation & Validation
+  const currentStepItem = activeSteps[currentStepIndex] || activeSteps[0];
+  const currentStepId = currentStepItem.id;
+
   const handleNext = () => {
     let result = { valid: true, errors: {} as Record<string, string> };
-    if (currentStep === 1) result = validateStep1(payload);
-    else if (currentStep === 2) result = validateStep2(payload);
-    else if (currentStep === 3) result = validateStep3(payload);
-    else if (currentStep === 4) result = validateStep4(payload);
+
+    if (currentStepId === 'goal') result = validateStep1(payload);
+    else if (currentStepId === 'content') result = validateStep2(payload);
+    else if (currentStepId === 'audience') result = validateStep3(payload);
+    else if (currentStepId === 'budget') result = validateStep4(payload);
+    else if (currentStepId === 'ab') result = validateAbStep(payload);
+    else if (currentStepId === 'advanced') result = validateAdvancedStep(payload);
 
     if (!result.valid) {
       setStepErrors(result.errors);
@@ -211,15 +227,15 @@ export function CreateCampaignPage() {
     }
 
     setStepErrors({});
-    if (currentStep < 5) {
-      setStep(currentStep + 1);
+    if (currentStepIndex < activeSteps.length - 1) {
+      setStepNumber(currentStepIndex + 2);
     }
   };
 
   const handleBack = () => {
-    if (currentStep > 1) {
+    if (currentStepIndex > 0) {
       setStepErrors({});
-      setStep(currentStep - 1);
+      setStepNumber(currentStepIndex);
     }
   };
 
@@ -231,54 +247,93 @@ export function CreateCampaignPage() {
 
   return (
     <div className="space-y-6">
+      {/* Top Header & Mode Toggle Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
-          title="Tạo chiến dịch mới"
-          description="Quy trình 5 bước thiết lập chiến dịch Dark Post an toàn, tự động xác minh trước khi gửi lên Meta."
+          title="Tạo quảng cáo nhanh"
+          description={
+            expertMode
+              ? 'Chế độ chuyên gia: Mở khóa cấu hình kỹ thuật Meta Graph API, Placements, Bidding, Dayparting và Thử nghiệm A/B.'
+              : 'Quy trình đơn giản: Thiết lập chiến dịch Dark Post an toàn, tự động xác minh trước khi gửi lên Meta.'
+          }
         />
 
-        {/* Save Status Banner */}
-        <div className="flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 sm:self-auto">
-          {saveStatus === 'saving' && (
-            <>
-              <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
-              <span>Đang lưu bản nháp...</span>
-            </>
-          )}
-          {saveStatus === 'saved' && (
-            <>
-              <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>Đã lưu lúc {lastSavedAt}</span>
-            </>
-          )}
-          {saveStatus === 'error' && (
-            <>
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              <span>Lưu cục bộ (Ngoại tuyến)</span>
-            </>
-          )}
-          {saveStatus === 'idle' && (
-            <>
-              <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
-              <span>Bản nháp tự động lưu</span>
-            </>
-          )}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Mode Switcher: Chế độ đơn giản vs Chế độ chuyên gia */}
+          <div
+            className="flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            data-testid="mode-toggle"
+          >
+            <button
+              type="button"
+              onClick={() => handleToggleMode(false)}
+              data-testid="mode-simple"
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                !expertMode
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              Chế độ đơn giản
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleMode(true)}
+              data-testid="mode-expert"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                expertMode
+                  ? 'bg-amber-500 text-white shadow-sm ring-1 ring-amber-400 dark:bg-amber-600'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              <span>Chế độ chuyên gia</span>
+              <span className="rounded bg-white/20 px-1 text-[10px]">PRO</span>
+            </button>
+          </div>
+
+          {/* Autosave Status Badge */}
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            {saveStatus === 'saving' && (
+              <>
+                <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
+                <span>Đang lưu bản nháp...</span>
+              </>
+            )}
+            {saveStatus === 'saved' && (
+              <>
+                <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Đã lưu lúc {lastSavedAt}</span>
+              </>
+            )}
+            {saveStatus === 'error' && (
+              <>
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <span>Lưu cục bộ (Ngoại tuyến)</span>
+              </>
+            )}
+            {saveStatus === 'idle' && (
+              <>
+                <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                <span>Tự động lưu bản nháp</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Stepper Navigation */}
+      {/* Stepper Navigation Bar */}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex min-w-[600px] items-center justify-between">
-          {STEPS.map((s, index) => {
-            const isPassed = currentStep > s.step;
-            const isCurrent = currentStep === s.step;
+        <div className="flex min-w-[650px] items-center justify-between">
+          {activeSteps.map((s, index) => {
+            const isPassed = currentStepIndex > index;
+            const isCurrent = currentStepIndex === index;
             return (
-              <div key={s.step} className="flex flex-1 items-center">
+              <div key={s.id} className="flex flex-1 items-center">
                 <button
                   type="button"
-                  onClick={() => setStep(s.step)}
+                  onClick={() => setStepNumber(index + 1)}
                   className="flex items-center gap-2.5 text-left focus:outline-none"
                 >
                   <div
@@ -286,7 +341,9 @@ export function CreateCampaignPage() {
                       isPassed
                         ? 'bg-emerald-500 text-white'
                         : isCurrent
-                          ? 'bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-950/60'
+                          ? expertMode
+                            ? 'bg-amber-500 text-white ring-4 ring-amber-100 dark:ring-amber-950/60'
+                            : 'bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-950/60'
                           : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                     }`}
                   >
@@ -295,30 +352,32 @@ export function CreateCampaignPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                       </svg>
                     ) : (
-                      s.step
+                      index + 1
                     )}
                   </div>
                   <div>
                     <div
-                      className={`text-xs font-semibold ${
+                      className={`text-[11px] font-semibold uppercase tracking-wider ${
                         isCurrent
-                          ? 'text-blue-600 dark:text-blue-400'
+                          ? expertMode
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-blue-600 dark:text-blue-400'
                           : isPassed
-                            ? 'text-slate-800 dark:text-slate-200'
+                            ? 'text-slate-700 dark:text-slate-300'
                             : 'text-slate-400 dark:text-slate-500'
                       }`}
                     >
-                      Bước {s.step}
+                      Bước {index + 1}
                     </div>
-                    <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
                       {s.title}
                     </div>
                   </div>
                 </button>
 
-                {index < STEPS.length - 1 && (
+                {index < activeSteps.length - 1 && (
                   <div
-                    className={`mx-4 h-0.5 flex-1 transition-colors ${
+                    className={`mx-3 h-0.5 flex-1 transition-colors ${
                       isPassed ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-slate-200 dark:bg-slate-800'
                     }`}
                   />
@@ -329,113 +388,78 @@ export function CreateCampaignPage() {
         </div>
       </div>
 
-      {/* AI Brief & Autofill Assistant (Available at Step 1) */}
-      {currentStep === 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50/50 to-pink-50/40 p-4 dark:border-purple-900/40 dark:from-purple-950/20 dark:to-pink-950/20">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-xs font-bold text-white shadow-sm">
-              ✨
-            </span>
-            <div>
-              <div className="text-sm font-semibold text-purple-950 dark:text-purple-200">
-                Trợ lý tạo nhanh bằng AI Brief & Mẫu có sẵn
-              </div>
-              <div className="text-xs text-purple-700/80 dark:text-purple-300/80">
-                Nhập 1 dòng mô tả ý tưởng hoặc chọn mẫu để tự động điền toàn bộ cấu hình.
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsAiBriefOpen((v) => !v)}
-              className="rounded-lg border border-purple-300 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm hover:bg-purple-50 dark:border-purple-800 dark:bg-slate-900 dark:text-purple-300"
-            >
-              {isAiBriefOpen ? 'Đóng AI Brief' : 'Nhập AI Brief 🪄'}
-            </button>
-            <button
-              type="button"
-              onClick={handleAutofillTemplate}
-              className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-700"
-            >
-              Mẫu ngẫu nhiên 🎲
-            </button>
-          </div>
-
-          {isAiBriefOpen && (
-            <div className="mt-3 w-full rounded-lg bg-white p-3 shadow-inner dark:bg-slate-900">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={briefInput}
-                  onChange={(e) => setBriefInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleApplyBrief()}
-                  placeholder="Ví dụ: Giảm 20% căn hộ nghỉ dưỡng Phú Quốc, ngân sách 2 triệu/ngày, link https://phuquoc.vn"
-                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-                <button
-                  type="button"
-                  onClick={handleApplyBrief}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700"
-                >
-                  Áp dụng
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Main Step Form Body */}
+      {/* Main Step Body */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        {currentStep === 1 && (
+        {currentStepId === 'goal' && (
           <GoalStep
             payload={payload}
             onChange={updatePayload}
             errors={stepErrors}
+            expertMode={expertMode}
           />
         )}
 
-        {currentStep === 2 && (
+        {currentStepId === 'content' && (
           <ContentStep
             payload={payload}
             onChange={updatePayload}
             errors={stepErrors}
+            expertMode={expertMode}
           />
         )}
 
-        {currentStep === 3 && (
+        {currentStepId === 'audience' && (
           <AudienceStep
             payload={payload}
             onChange={updatePayload}
             errors={stepErrors}
+            expertMode={expertMode}
           />
         )}
 
-        {currentStep === 4 && (
+        {currentStepId === 'budget' && (
           <BudgetScheduleStep
             payload={payload}
             onChange={updatePayload}
             errors={stepErrors}
             dailyBudgetLimit={user?.dailyBudgetLimit}
+            expertMode={expertMode}
           />
         )}
 
-        {currentStep === 5 && (
+        {currentStepId === 'ab' && (
+          <AbStudioStep
+            payload={payload}
+            onChange={updatePayload}
+            errors={stepErrors}
+          />
+        )}
+
+        {currentStepId === 'advanced' && (
+          <AdvancedStudioStep
+            payload={payload}
+            onChange={updatePayload}
+            errors={stepErrors}
+          />
+        )}
+
+        {currentStepId === 'review' && (
           <ReviewStep
-            draft={draft ?? {
-              id: 'temp',
-              ownerId: user?.id ?? '',
-              revision: 1,
-              state: 'DRAFT',
-              step: 5,
-              payload,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            }}
+            draft={
+              draft ?? {
+                id: 'temp',
+                ownerId: user?.id ?? '',
+                revision: 1,
+                state: 'DRAFT',
+                step: currentStepIndex + 1,
+                payload,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+            }
             onSubmitted={handleSubmitted}
-            onBackToStep={(s) => setStep(s)}
+            onBackToStep={(s) => setStepNumber(s)}
+            expertMode={expertMode}
           />
         )}
 
@@ -443,18 +467,22 @@ export function CreateCampaignPage() {
         <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-slate-800">
           <button
             type="button"
-            disabled={currentStep === 1}
+            disabled={currentStepIndex === 0}
             onClick={handleBack}
             className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
           >
             ← Quay lại
           </button>
 
-          {currentStep < 5 && (
+          {currentStepIndex < activeSteps.length - 1 && (
             <button
               type="button"
               onClick={handleNext}
-              className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+              className={`rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-all ${
+                expertMode
+                  ? 'bg-amber-500 hover:bg-amber-600 ring-1 ring-amber-400'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
               Tiếp tục →
             </button>

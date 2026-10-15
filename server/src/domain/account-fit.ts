@@ -58,12 +58,13 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const decimal = (value: number) => value.toLocaleString('vi-VN', { maximumFractionDigits: 1 });
 const percent = (ratio: number) => `${Math.round(Math.abs(ratio - 1) * 100)}%`;
 
-/** The metric each objective is bought for; "lower" metrics are costs. */
 const OBJECTIVE_METRIC: Record<Objective, { key: 'roas' | 'cpa' | 'cpc' | 'cpm'; better: 'higher' | 'lower'; label: (k: Kpis) => string }> = {
   sales: { key: 'roas', better: 'higher', label: (k) => `ROAS ${decimal(k.roas)}x` },
   leads: { key: 'cpa', better: 'lower', label: (k) => `CPA ${formatVnd(Math.round(k.cpa))}` },
   traffic: { key: 'cpc', better: 'lower', label: (k) => `CPC ${formatVnd(Math.round(k.cpc))}` },
   awareness: { key: 'cpm', better: 'lower', label: (k) => `CPM ${formatVnd(Math.round(k.cpm))}` },
+  engagement: { key: 'cpc', better: 'lower', label: (k) => `CPC ${formatVnd(Math.round(k.cpc))}` },
+  app_promotion: { key: 'cpa', better: 'lower', label: (k) => `CPA ${formatVnd(Math.round(k.cpa))}` },
 };
 
 /** How many times better than the yardstick the account did; null when either side has no data. */
@@ -84,6 +85,8 @@ export function scoreAccount({ account, history }: AccountCandidate, context: Fi
     return { accountId: account.id, score: 0, eligible: false, runwayDays: null, breakdown: zero, pros, cons: ['Tài khoản đang bị vô hiệu hoá trên nền tảng'] };
   }
 
+
+  
   // Runway first: an account at its limit cannot take the campaign whatever its history.
   let runwayDays: number | null = null;
   let runway = 25;

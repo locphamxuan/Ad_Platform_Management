@@ -137,6 +137,8 @@ export function ctaAdvice(objective: Objective): { label: string; reason: string
     leads: '"Đăng ký" khớp với biểu mẫu thu thông tin, giảm người bấm nhầm và hạ giá mỗi khách tiềm năng.',
     traffic: '"Tìm hiểu thêm" ít cam kết nên thu hút nhiều lượt nhấp nhất cho mục tiêu lưu lượng.',
     awareness: '"Tìm hiểu thêm" giữ quảng cáo nhẹ nhàng, hợp với mục tiêu nhận diện.',
+    engagement: '"Gửi tin nhắn" khuyến khích người xem bắt đầu cuộc trò chuyện ngay trên Messenger.',
+    app_promotion: '"Cài đặt ngay" dẫn trực tiếp đến kho ứng dụng để tối đa hóa lượt tải về.',
   };
   return { label, reason: reason[objective] };
 }

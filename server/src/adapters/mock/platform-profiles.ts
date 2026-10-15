@@ -10,7 +10,9 @@ export const PLATFORM_PROFILES: Record<Platform, MockPlatformProfile> = {
     objectiveMap: {
       awareness: 'OUTCOME_AWARENESS',
       traffic: 'OUTCOME_TRAFFIC',
+      engagement: 'OUTCOME_ENGAGEMENT',
       leads: 'OUTCOME_LEADS',
+      app_promotion: 'OUTCOME_APP_PROMOTION',
       sales: 'OUTCOME_SALES',
     },
     cpm: 45_000,
@@ -26,7 +28,9 @@ export const PLATFORM_PROFILES: Record<Platform, MockPlatformProfile> = {
     objectiveMap: {
       awareness: 'REACH',
       traffic: 'TRAFFIC',
+      engagement: 'VIDEO_VIEWS',
       leads: 'LEAD_GENERATION',
+      app_promotion: 'APP_PROMOTION',
       sales: 'PRODUCT_SALES',
     },
     cpm: 30_000,
@@ -42,7 +46,9 @@ export const PLATFORM_PROFILES: Record<Platform, MockPlatformProfile> = {
     objectiveMap: {
       awareness: 'DISPLAY',
       traffic: 'SEARCH',
+      engagement: 'VIDEO',
       leads: 'SEARCH',
+      app_promotion: 'APP_CAMPAIGN',
       sales: 'PERFORMANCE_MAX',
     },
     cpm: 70_000,

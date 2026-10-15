@@ -13,9 +13,10 @@ interface ReviewStepProps {
   draft: CampaignDraft;
   onSubmitted: (campaign: Campaign) => void;
   onBackToStep: (step: number) => void;
+  expertMode?: boolean;
 }
 
-export function ReviewStep({ draft, onSubmitted, onBackToStep }: ReviewStepProps) {
+export function ReviewStep({ draft, onSubmitted, onBackToStep, expertMode }: ReviewStepProps) {
   const [selectedPageId, setSelectedPageId] = useState<string>(() => draft.payload.pages?.[0]?.id ?? 'default');
   const [selectedPlacement, setSelectedPlacement] = useState<string>('DESKTOP_FEED_STANDARD');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -295,6 +296,66 @@ export function ReviewStep({ draft, onSubmitted, onBackToStep }: ReviewStepProps
           )}
         </div>
       </div>
+
+      {/* Expert Mode Reviews: A/B Testing, Advanced Studio & Technical JSON */}
+      {expertMode && (
+        <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/20 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-amber-500/10 px-2 py-0.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Chuyên gia
+            </span>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Đối soát kỹ thuật Meta & Kế hoạch thử nghiệm
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* A/B Testing Plan Review */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                Thử nghiệm A/B (A/B Testing Studio)
+              </div>
+              {payload.ab_plan?.enabled ? (
+                <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                  <div>• Biến số thử nghiệm: <strong>{payload.ab_plan.variable === 'content' ? 'Nội dung (Creative)' : payload.ab_plan.variable === 'audience' ? 'Khách hàng' : 'Vị trí'}</strong></div>
+                  <div>• Tỷ lệ phân bổ: <strong>50/50 split</strong></div>
+                  <div>• Tiêu chí đánh giá: <strong>{payload.ab_plan.metric?.toUpperCase()} tối ưu nhất</strong></div>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-slate-400">
+                  Không kích hoạt thử nghiệm A/B (Chiến dịch đơn lẻ chuẩn).
+                </div>
+              )}
+            </div>
+
+            {/* Advanced Settings Review */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                Cài đặt nâng cao (Advanced Settings)
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                <div>• Vị trí hiển thị: <strong>{payload.placements?.mode === 'manual' ? `Tự chọn (${payload.placements.list?.length ?? 0} vị trí)` : payload.placements?.mode === 'auto' ? 'Advantage+ Tự động' : 'Đề xuất tối ưu'}</strong></div>
+                <div>• Chiến lược giá thầu: <strong>{payload.advanced?.bid_strategy ?? 'LOWEST_COST_WITHOUT_CAP'}</strong></div>
+                <div>• Mục tiêu tối ưu: <strong>{payload.advanced?.optimization_goal ?? 'Mặc định theo mục tiêu'}</strong></div>
+                <div>• Cửa sổ ghi nhận: <strong>{payload.advanced?.attribution_window ?? 'Mặc định Meta'}</strong></div>
+                {payload.advanced?.dayparting && (
+                  <div>• Phân phối theo giờ: <strong>{payload.advanced.dayparting.days.length} ngày/tuần ({payload.advanced.dayparting.from_hour}h – {payload.advanced.dayparting.to_hour}h)</strong></div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Collapsible Meta Graph API JSON Payload */}
+          <details className="rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs dark:border-slate-800">
+            <summary className="cursor-pointer font-mono font-semibold text-emerald-400 hover:text-emerald-300">
+              [+] Xem cấu trúc JSON Meta Graph API hoàn chỉnh (Chuyên gia)
+            </summary>
+            <pre className="mt-3 max-h-64 overflow-x-auto font-mono text-[11px] text-emerald-300 leading-relaxed">
+              {JSON.stringify(payload, null, 2)}
+            </pre>
+          </details>
+        </div>
+      )}
 
       {/* Main Submit Action */}
       <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-6 dark:border-blue-900/40 dark:bg-blue-950/20">

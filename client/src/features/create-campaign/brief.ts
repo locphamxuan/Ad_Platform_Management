@@ -19,6 +19,8 @@ export interface Brief {
 
 /** Checked in order: a stated sign-up beats a discount, a discount beats a launch. */
 const OBJECTIVE_HINTS: [Objective, RegExp][] = [
+  ['engagement', /tin nhan|inbox|mess|nhan tin|tu van qua (tin|mess)|tuong tac|cmt|comment|binh luan|like/],
+  ['app_promotion', /tai app|cai app|ung dung|cai dat|download app|app store|ch play/],
   ['leads', /dang ky|tu van|\bform\b|\blead|thu thap|de lai (so|thong tin)|dat lich|hotline/],
   ['sales', /\bgiam\b|\bsale\b|khuyen mai|uu dai|mua ngay|mua \d|dat hang|don hang|chuyen doi|flash|voucher|freeship|\boff\b/],
   ['traffic', /ra mat|truy cap|\bwebsite\b|\bweb\b|bai viet|\bblog\b|kham pha|luot xem trang/],
@@ -194,6 +196,40 @@ export function generateCreatives(brief: Brief): CreativeVariant[] {
         angle: 'Cảm xúc',
         headline: `${product} – trọn vẹn từng khoảnh khắc`,
         primaryText: `Mỗi khoảnh khắc đều xứng đáng được nâng niu. ${product} — đồng hành cùng bạn trong từng ngày.`,
+      },
+    ],
+    engagement: [
+      {
+        angle: 'Tư vấn',
+        headline: `Nhắn tin ngay để nhận tư vấn ${p}`,
+        primaryText: `Bạn cần tìm hiểu về ${p}${when}? Nhắn tin ngay cho chúng tôi để được tư vấn chi tiết và giải đáp mọi thắc mắc!`,
+      },
+      {
+        angle: 'Ưu đãi inbox',
+        headline: offer ? `Nhắn tin nhận ${offer} cho ${p}` : `Nhắn tin ngay – Nhận ưu đãi riêng`,
+        primaryText: `Inbox ngay để nhận thông tin ưu đãi ${p}${when}. Đội ngũ hỗ trợ phản hồi trong vài phút!`,
+      },
+      {
+        angle: 'Trò chuyện',
+        headline: `Hỏi nhanh về ${product}`,
+        primaryText: `Có thắc mắc gì về ${product}? Hãy gửi tin nhắn cho chúng tôi để được trợ giúp tức thì.`,
+      },
+    ],
+    app_promotion: [
+      {
+        angle: 'Trải nghiệm',
+        headline: `Tải ứng dụng ${product} ngay hôm nay`,
+        primaryText: `Trải nghiệm tiện ích vượt trội cùng ứng dụng ${product}. Tải ngay trên App Store & Google Play!`,
+      },
+      {
+        angle: 'Ưu đãi trên app',
+        headline: offer ? `Tải app nhận ngay ${offer}` : `Tải app để nhận ưu đãi độc quyền`,
+        primaryText: `Cài đặt ứng dụng ${product}${when} để nhận ngay ưu đãi dành riêng cho người dùng mới. Tải ngay!`,
+      },
+      {
+        angle: 'Nhanh chóng & Tiện lợi',
+        headline: `${product} ngay trong tầm tay bạn`,
+        primaryText: `Mọi thao tác quản lý và đặt mua nhanh hơn bao giờ hết trên ứng dụng ${product}. Cài đặt miễn phí!`,
       },
     ],
   };

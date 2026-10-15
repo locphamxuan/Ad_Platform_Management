@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../../lib/api';
-import type { Audience, AudienceLocation, CampaignDraftPayload } from '../../../lib/types';
+import type { AudienceLocation, CampaignDraftPayload } from '../../../lib/types';
 import { Field } from '../../../components/ui';
 
 interface AudienceStepProps {
@@ -9,15 +9,30 @@ interface AudienceStepProps {
   onChange: (patch: Partial<CampaignDraftPayload>) => void;
   errors?: Record<string, string>;
   warnings?: Record<string, string>;
+  expertMode?: boolean;
 }
 
-export function AudienceStep({ payload, onChange, errors }: AudienceStepProps) {
+const INTEREST_SUGGESTIONS = [
+  'Bất động sản',
+  'Đầu tư tài chính',
+  'Kinh doanh & Khởi nghiệp',
+  'Thiết kế nội thất & Kiến trúc',
+  'Mua sắm trực tuyến',
+  'Du lịch nghỉ dưỡng',
+  'Công nghệ & Thiết bị di động',
+  'Xe hơi & Phương tiện',
+];
+
+export function AudienceStep({ payload, onChange, errors, expertMode }: AudienceStepProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [interestInput, setInterestInput] = useState('');
   const audience = payload.audience ?? {
     locations: 'VN',
     ageMin: 18,
     ageMax: 65,
     genders: ['MALE', 'FEMALE'],
+    detailedTargeting: [],
+    advantageExpansion: true,
   };
 
   const isHousing = payload.specialCategory === 'HOUSING';
@@ -29,9 +44,37 @@ export function AudienceStep({ payload, onChange, errors }: AudienceStepProps) {
     enabled: !isNationwide && searchQuery.trim().length > 0,
   });
 
-  const updateAudience = (patch: Partial<Audience>) => {
+  const updateAudience = (patch: Partial<typeof audience>) => {
     onChange({ audience: { ...audience, ...patch } });
   };
+
+  const addInterest = (name: string) => {
+    if (!name.trim()) return;
+    const cur = audience.detailedTargeting ?? [];
+    if (!cur.includes(name.trim())) {
+      updateAudience({ detailedTargeting: [...cur, name.trim()] });
+    }
+    setInterestInput('');
+  };
+
+  const removeInterest = (name: string) => {
+    const cur = audience.detailedTargeting ?? [];
+    updateAudience({ detailedTargeting: cur.filter((x) => x !== name) });
+  };
+
+  const handleAiSuggestInterests = () => {
+    const defaults = ['Đầu tư tài chính', 'Bất động sản', 'Kinh doanh & Khởi nghiệp'];
+    const cur = audience.detailedTargeting ?? [];
+    const merged = Array.from(new Set([...cur, ...defaults]));
+    updateAudience({ detailedTargeting: merged });
+  };
+
+  // Estimate audience size
+  const baseReach = isNationwide ? 42_000_000 : (Array.isArray(audience.locations) ? audience.locations.length * 2_800_000 : 5_000_000);
+  const ageFactor = Math.max(0.2, (audience.ageMax - audience.ageMin) / 47);
+  const genderFactor = audience.genders.length === 2 ? 1 : 0.52;
+  const estimatedMin = Math.round(baseReach * ageFactor * genderFactor * 0.7);
+  const estimatedMax = Math.round(baseReach * ageFactor * genderFactor * 1.05);
 
   const setLocationMode = (mode: 'VN' | 'SPECIFIC') => {
     if (mode === 'VN') {
@@ -257,6 +300,143 @@ export function AudienceStep({ payload, onChange, errors }: AudienceStepProps) {
           })}
         </div>
       </Field>
+
+      {/* Expert Mode Detailed Targeting & Reach Gauge */}
+      {expertMode && (
+        <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/20 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-amber-500/10 px-2 py-0.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Chuyên gia
+            </span>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Nhắm mục tiêu chi tiết (Detailed Targeting) & Quy mô tiếp cận
+            </div>
+          </div>
+
+          {/* Potential Reach Gauge Card */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-xs font-medium text-slate-500">Ước tính quy mô tiếp cận tiềm năng (Potential Reach):</div>
+                <div className="mt-0.5 text-base font-bold text-slate-900 dark:text-slate-100">
+                  {estimatedMin.toLocaleString('vi-VN')} – {estimatedMax.toLocaleString('vi-VN')} người
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 self-start rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span>Quy mô đối tượng rộng tối ưu</span>
+              </div>
+            </div>
+
+            {/* Gauge bar */}
+            <div className="mt-3">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{ width: '68%' }} />
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+                <span>Quá hẹp (&lt; 100k)</span>
+                <span className="font-medium text-slate-600 dark:text-slate-300">Cân bằng tốt (~5M)</span>
+                <span>Rất rộng (&gt; 30M)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Targeting */}
+          <Field label="Sở thích & Hành vi chi tiết (Detailed Targeting)">
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={interestInput}
+                  onChange={(e) => setInterestInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addInterest(interestInput))}
+                  placeholder="Nhập từ khóa sở thích rồi nhấn Enter..."
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => addInterest(interestInput)}
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
+                >
+                  Thêm
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAiSuggestInterests}
+                  className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300"
+                >
+                  Gợi ý AI ✨
+                </button>
+              </div>
+
+              {/* Selected Interests Chips */}
+              {(audience.detailedTargeting ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {(audience.detailedTargeting ?? []).map((item) => (
+                    <span
+                      key={item}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300"
+                    >
+                      <span>{item}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeInterest(item)}
+                        className="text-blue-500 hover:text-blue-800 dark:hover:text-blue-100"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Quick suggestions */}
+              <div>
+                <div className="text-[11px] text-slate-400">Gợi ý nhanh theo ngành hàng:</div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {INTEREST_SUGGESTIONS.map((item) => {
+                    const active = (audience.detailedTargeting ?? []).includes(item);
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => (active ? removeInterest(item) : addInterest(item))}
+                        className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
+                          active
+                            ? 'border-blue-600 bg-blue-50 font-semibold text-blue-700 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                        }`}
+                      >
+                        {active ? `✓ ${item}` : `+ ${item}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Advantage+ Audience Expansion Switch */}
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Mở rộng đối tượng Advantage+ (Advantage+ Detailed Targeting)
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Cho phép Meta mở rộng đối tượng khi thuật toán thấy khả năng tăng chuyển đổi với chi phí tốt hơn.
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={audience.advantageExpansion ?? true}
+                    onChange={(e) => updateAudience({ advantageExpansion: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+            </div>
+          </Field>
+        </div>
+      )}
     </div>
   );
 }

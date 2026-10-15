@@ -49,6 +49,7 @@ export function App() {
         <Route index element={guard('report:view', <DashboardPage />)} />
         <Route path="campaigns" element={guard('campaign:view', <CampaignsPage />)} />
         <Route path="campaigns/new" element={guard('campaign:manage', <CreateCampaignPage />)} />
+        <Route path="tao-nhanh" element={guard('campaign:manage', <CreateCampaignPage />)} />
         <Route path="campaigns/:id" element={guard('campaign:view', <CampaignDetailPage />)} />
         <Route path="rules" element={guard('rule:view', <RulesPage />)} />
         <Route path="integrations" element={guard('integration:view', <IntegrationsPage />)} />

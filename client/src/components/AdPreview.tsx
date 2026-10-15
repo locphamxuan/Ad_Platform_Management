@@ -36,12 +36,13 @@ const FORMATS: { value: Format | 'all'; label: string; icon: IconName }[] = [
   { value: 'horizontal', label: 'Ngang (Tìm kiếm, Hiển thị)', icon: 'rectangle' },
 ];
 
-/** The button text each objective is usually bought with. */
 export const CTA_BY_OBJECTIVE: Record<Objective, string> = {
   sales: 'Mua ngay',
   leads: 'Đăng ký',
   traffic: 'Tìm hiểu thêm',
   awareness: 'Tìm hiểu thêm',
+  engagement: 'Gửi tin nhắn',
+  app_promotion: 'Cài đặt ngay',
 };
 
 /** "https://www.shop-abc.vn/x" → { domain: "shop-abc.vn", name: "Shop-abc" }. */

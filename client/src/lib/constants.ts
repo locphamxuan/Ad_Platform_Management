@@ -11,7 +11,9 @@ export const PLATFORM_META: Record<Platform, { label: string; color: string }> =
 export const OBJECTIVE_LABELS: Record<Objective, string> = {
   awareness: 'Nhận diện thương hiệu',
   traffic: 'Lưu lượng truy cập',
+  engagement: 'Lượt tương tác',
   leads: 'Thu thập khách tiềm năng',
+  app_promotion: 'Quảng bá ứng dụng',
   sales: 'Doanh số / Chuyển đổi',
 };
 

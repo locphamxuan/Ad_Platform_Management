@@ -1,5 +1,5 @@
 export type Platform = 'facebook' | 'tiktok' | 'google';
-export type Objective = 'awareness' | 'traffic' | 'leads' | 'sales';
+export type Objective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'app_promotion' | 'sales';
 export type CampaignStatus = 'ACTIVE' | 'PAUSED';
 export type RuleMetric = 'cpa' | 'roas' | 'spend' | 'ctr';
 export type RuleOperator = 'gt' | 'lt';
@@ -154,6 +154,52 @@ export type CampaignDraftState =
   | 'NEEDS_RECONCILE'
   | 'NEEDS_REVIEW';
 
+export interface AbVariant {
+  key: string;
+  name: string;
+  value: Record<string, any>;
+}
+
+export interface AbPlan {
+  enabled: boolean;
+  variable: 'content' | 'audience' | 'placements';
+  splitRatio?: number;
+  variants: AbVariant[];
+  metric?: 'cpa' | 'ctr' | 'roas';
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface PlacementsConfig {
+  mode: 'preset' | 'auto' | 'manual';
+  list?: string[];
+}
+
+export interface DaypartingConfig {
+  days: number[]; // 0: CN, 1: T2, ..., 6: T7
+  from_hour: number;
+  to_hour: number;
+}
+
+export interface AdvancedConfig {
+  optimization_goal?: string;
+  bid_strategy?: 'LOWEST_COST_WITHOUT_CAP' | 'COST_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'MINIMUM_ROAS';
+  bid_amount?: number;
+  billing_event?: string;
+  destination_type?: string;
+  attribution_window?: string;
+  url_tags?: string;
+  lead_form_id?: string;
+  special_ad_categories?: string[];
+  dayparting?: DaypartingConfig;
+}
+
+export interface ExtendedAudience extends Audience {
+  detailedTargeting?: string[];
+  advantageExpansion?: boolean;
+  reachEstimate?: number;
+}
+
 export interface CampaignDraftPayload {
   name: string;
   objective: Objective;
@@ -162,11 +208,24 @@ export interface CampaignDraftPayload {
   allocations: Array<{ platform: Platform; percentage?: number; percent?: number }>;
   creative: Creative;
   pages?: PageRef[];
-  audience?: Audience;
+  audience?: ExtendedAudience;
   schedule?: CampaignSchedule;
   specialCategory?: SpecialCategory;
   accountId?: string;
   acknowledgeNationwide?: boolean;
+
+  // Expert Mode & A/B testing
+  destination?: string;
+  buying_type?: 'AUCTION' | 'RESERVED';
+  setup_mode?: 'recommended' | 'manual';
+  ab_plan?: AbPlan;
+  placements?: PlacementsConfig;
+  advanced?: AdvancedConfig;
+  budget?: {
+    mode?: 'daily' | 'lifetime' | 'until_paused';
+    amount?: number | null;
+    cbo?: boolean;
+  };
 }
 
 export interface CheckLevelResult {

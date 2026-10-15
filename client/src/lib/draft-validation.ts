@@ -147,6 +147,56 @@ export function validateStep4(payload: Partial<CampaignDraftPayload>): StepValid
   return { valid: Object.keys(errors).length === 0, errors, warnings };
 }
 
+export function validateAbStep(payload: Partial<CampaignDraftPayload>): StepValidationResult {
+  const errors: Record<string, string> = {};
+  const warnings: Record<string, string> = {};
+  const plan = payload.ab_plan;
+
+  if (plan?.enabled) {
+    if (!plan.variable) {
+      errors.variable = 'Vui lòng chọn biến số cần thử nghiệm (Nội dung, Khách hàng hoặc Vị trí)';
+    }
+    if (!plan.variants || plan.variants.length < 2) {
+      errors.variants = 'Thử nghiệm A/B cần tối thiểu 2 phương án đối chứng (A và B)';
+    } else {
+      const vA = plan.variants[0];
+      const vB = plan.variants[1];
+      if (!vA?.name?.trim()) errors.variantA = 'Vui lòng đặt tên cho Phương án A';
+      if (!vB?.name?.trim()) errors.variantB = 'Vui lòng đặt tên cho Phương án B';
+    }
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors, warnings };
+}
+
+export function validateAdvancedStep(payload: Partial<CampaignDraftPayload>): StepValidationResult {
+  const errors: Record<string, string> = {};
+  const warnings: Record<string, string> = {};
+  const adv = payload.advanced;
+  const pl = payload.placements;
+
+  if (pl?.mode === 'manual' && (!pl.list || pl.list.length === 0)) {
+    errors.placements = 'Chế độ tự chọn vị trí yêu cầu chọn ít nhất 1 vị trí hiển thị';
+  }
+
+  if (adv?.bid_strategy === 'COST_CAP' || adv?.bid_strategy === 'LOWEST_COST_WITH_BID_CAP') {
+    if (!adv.bid_amount || adv.bid_amount <= 0) {
+      errors.bid_amount = 'Chiến lược giới hạn giá thầu yêu cầu nhập mức thầu hợp lệ (> 0 ₫)';
+    }
+  }
+
+  if (adv?.dayparting) {
+    if (!adv.dayparting.days || adv.dayparting.days.length === 0) {
+      errors.dayparting = 'Vui lòng chọn ít nhất 1 ngày trong tuần để phân phối theo lịch';
+    }
+    if (adv.dayparting.from_hour >= adv.dayparting.to_hour) {
+      errors.dayparting = 'Giờ bắt đầu phân phối phải nhỏ hơn giờ kết thúc';
+    }
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors, warnings };
+}
+
 export function validateDraftAll(payload: Partial<CampaignDraftPayload>): {
   valid: boolean;
   stepErrors: Record<number, Record<string, string>>;
@@ -155,15 +205,19 @@ export function validateDraftAll(payload: Partial<CampaignDraftPayload>): {
   const s2 = validateStep2(payload);
   const s3 = validateStep3(payload);
   const s4 = validateStep4(payload);
+  const sAb = validateAbStep(payload);
+  const sAdv = validateAdvancedStep(payload);
 
   const stepErrors: Record<number, Record<string, string>> = {};
   if (!s1.valid) stepErrors[1] = s1.errors;
   if (!s2.valid) stepErrors[2] = s2.errors;
   if (!s3.valid) stepErrors[3] = s3.errors;
   if (!s4.valid) stepErrors[4] = s4.errors;
+  if (!sAb.valid) stepErrors[5] = sAb.errors;
+  if (!sAdv.valid) stepErrors[6] = sAdv.errors;
 
   return {
-    valid: s1.valid && s2.valid && s3.valid && s4.valid,
+    valid: s1.valid && s2.valid && s3.valid && s4.valid && sAb.valid && sAdv.valid,
     stepErrors,
   };
 }

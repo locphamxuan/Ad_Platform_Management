@@ -159,16 +159,16 @@ export const campaignDraftPayloadSchema = z.object({
   specialCategory: z.enum(['NONE', 'HOUSING']).optional(),
   accountId: z.string().optional(),
   acknowledgeNationwide: z.boolean().optional(),
-});
+}).passthrough();
 
 export const createDraftSchema = z.object({
-  step: z.number().int().min(1).max(5).default(1),
+  step: z.number().int().min(1).max(7).default(1),
   payload: campaignDraftPayloadSchema.default({}),
 });
 
 export const updateDraftSchema = z.object({
   revision: z.number().int().positive(),
-  step: z.number().int().min(1).max(5).optional(),
+  step: z.number().int().min(1).max(7).optional(),
   payload: campaignDraftPayloadSchema.optional(),
 });
 

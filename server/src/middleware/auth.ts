@@ -33,3 +33,5 @@ export const requirePermission =
   (_req, res, next) => {
     next(hasPermission(currentUser(res).role, permission) ? undefined : new ForbiddenError());
   };
+
+  
