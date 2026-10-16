@@ -19,6 +19,7 @@ interface ReviewStepProps {
 export function ReviewStep({ draft, onSubmitted, onBackToStep, expertMode }: ReviewStepProps) {
   const [selectedPageId, setSelectedPageId] = useState<string>(() => draft.payload.pages?.[0]?.id ?? 'default');
   const [selectedPlacement, setSelectedPlacement] = useState<string>('DESKTOP_FEED_STANDARD');
+  const [previewMode, setPreviewMode] = useState<'adhub' | 'meta'>('adhub');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null);
 
@@ -225,10 +226,46 @@ export function ReviewStep({ draft, onSubmitted, onBackToStep, expertMode }: Rev
 
       {/* Ad Previews Section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            Xem trước mẫu quảng cáo theo Trang & Vị trí hiển thị
-          </h4>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Xem trước mẫu quảng cáo theo Trang & Vị trí hiển thị
+            </h4>
+            {selectedPage && (
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                </svg>
+                <span>Trang đại diện: <strong>{selectedPage.name}</strong> (ID: {selectedPage.id})</span>
+              </div>
+            )}
+          </div>
+
+          {/* Toggle between AdHub Native Preview & Meta Iframe */}
+          <div className="flex items-center rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setPreviewMode('adhub')}
+              className={`rounded-lg px-3 py-1.5 font-medium transition-all ${
+                previewMode === 'adhub'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              Mô phỏng AdHub (Khuyên dùng)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreviewMode('meta')}
+              className={`rounded-lg px-3 py-1.5 font-medium transition-all ${
+                previewMode === 'meta'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              Meta Iframe trực tiếp
+            </button>
+          </div>
         </div>
 
         {/* Page Tabs */}
@@ -251,47 +288,55 @@ export function ReviewStep({ draft, onSubmitted, onBackToStep, expertMode }: Rev
           </div>
         )}
 
-        {/* Placement Format Tabs */}
-        <div className="flex gap-2">
-          {[
-            { id: 'DESKTOP_FEED_STANDARD', label: 'Bảng tin máy tính' },
-            { id: 'MOBILE_FEED_STANDARD', label: 'Bảng tin di động' },
-            ...(selectedPage?.hasInstagram ? [{ id: 'INSTAGRAM_STANDARD', label: 'Instagram Feed' }] : []),
-          ].map((placement) => (
-            <button
-              key={placement.id}
-              type="button"
-              onClick={() => setSelectedPlacement(placement.id)}
-              className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                selectedPlacement === placement.id
-                  ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-300'
-                  : 'border-slate-200 bg-white text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
-              }`}
-            >
-              {placement.label}
-            </button>
-          ))}
-        </div>
+        {/* Placement Format Tabs for Meta Iframe */}
+        {previewMode === 'meta' && (
+          <div className="flex gap-2">
+            {[
+              { id: 'DESKTOP_FEED_STANDARD', label: 'Bảng tin máy tính' },
+              { id: 'MOBILE_FEED_STANDARD', label: 'Bảng tin di động' },
+              ...(selectedPage?.hasInstagram ? [{ id: 'INSTAGRAM_STANDARD', label: 'Instagram Feed' }] : []),
+            ].map((placement) => (
+              <button
+                key={placement.id}
+                type="button"
+                onClick={() => setSelectedPlacement(placement.id)}
+                className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
+                  selectedPlacement === placement.id
+                    ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-300'
+                    : 'border-slate-200 bg-white text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                }`}
+              >
+                {placement.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Preview Frame */}
-        <div className="flex justify-center rounded-xl border border-slate-200 bg-slate-100 p-6 dark:border-slate-800 dark:bg-slate-950">
-          {activePreview?.iframeHtml ? (
-            <div
-              className="max-w-md w-full overflow-hidden rounded-lg bg-white shadow dark:bg-slate-900"
-              dangerouslySetInnerHTML={{ __html: activePreview.iframeHtml }}
-            />
-          ) : (
-            <div className="flex flex-col items-center gap-3">
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                BẢN MÔ PHỎNG — CHƯA XÁC MINH VỚI META
-              </span>
-              <div className="w-80">
-                <AdPreview
-                  platform="facebook"
-                  creative={payload.creative ?? { headline: '', primaryText: '', landingUrl: '' }}
-                  pageName={selectedPage?.name}
-                />
+        <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-100 p-6 dark:border-slate-800 dark:bg-slate-950">
+          {previewMode === 'meta' ? (
+            <div className="flex flex-col items-center gap-3 w-full">
+              <div className="rounded-lg bg-blue-50/70 p-3 text-xs text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 max-w-md text-center">
+                ℹ️ Lưu ý: Trình duyệt có thể chặn cookie bên thứ ba của Facebook trong khung nhúng. Nếu thấy thông báo đăng nhập hoặc chưa nhận trang, bạn hãy chuyển sang <strong>Mô phỏng AdHub</strong> để xem đầy đủ nội dung quảng cáo.
               </div>
+              {activePreview?.iframeHtml ? (
+                <div
+                  className="max-w-md w-full overflow-hidden rounded-lg bg-white shadow dark:bg-slate-900"
+                  dangerouslySetInnerHTML={{ __html: activePreview.iframeHtml }}
+                />
+              ) : (
+                <div className="text-xs text-slate-400 py-6">Đang tải bản xem trước từ Meta...</div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full max-w-md">
+              <AdPreview
+                platform="facebook"
+                creative={payload.creative ?? { headline: '', primaryText: '', landingUrl: '' }}
+                pageName={selectedPage?.name ?? 'Bosa Group'}
+                imageSrc={payload.creative?.imageId ? api.media.imageUrl(payload.creative.imageId) : undefined}
+                objective={payload.objective}
+              />
             </div>
           )}
         </div>
@@ -358,12 +403,26 @@ export function ReviewStep({ draft, onSubmitted, onBackToStep, expertMode }: Rev
       )}
 
       {/* Main Submit Action */}
-      <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-6 dark:border-blue-900/40 dark:bg-blue-950/20">
+      <div className={`rounded-xl border p-6 transition-all ${
+        hasValidationErrors
+          ? 'border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20'
+          : 'border-emerald-300 bg-emerald-50/50 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30'
+      }`}>
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Sẵn sàng tạo chiến dịch trên Meta?
-            </h4>
+            <div className="flex items-center gap-2">
+              {!hasValidationErrors && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                  </svg>
+                  Đạt 4 cấp xác minh Meta
+                </span>
+              )}
+              <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Sẵn sàng khởi tạo chiến dịch lên Meta Ads
+              </h4>
+            </div>
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
               Chiến dịch sẽ được tạo ở trạng thái <strong>TẠM DỪNG (PAUSED)</strong> trên Meta để đảm bảo an toàn ngân sách (Quy tắc R2). Bạn sẽ kích hoạt chiến dịch trực tiếp trên Meta Ads Manager (Quy tắc R3).
             </p>
@@ -373,9 +432,18 @@ export function ReviewStep({ draft, onSubmitted, onBackToStep, expertMode }: Rev
             type="button"
             disabled={hasValidationErrors || submitMutation.isPending}
             onClick={() => setShowConfirmModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-50 transition-all shrink-0"
           >
-            {submitMutation.isPending ? 'Đang tạo trên Meta...' : 'Tạo trên Meta (Tạm dừng)'}
+            {submitMutation.isPending ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Đang tạo trên Meta...
+              </>
+            ) : (
+              <>
+                <span>🚀 Tạo trên Meta (Tạm dừng)</span>
+              </>
+            )}
           </button>
         </div>
 
